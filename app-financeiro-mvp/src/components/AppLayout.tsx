@@ -1,9 +1,99 @@
 'use client';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { LogOut } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const [headerData, setHeaderData] = useState<{
+    nomeUsuario: string;
+    nomeFamilia: string;
+    participantes: string[];
+  } | null>(null);
+  const [isLoadingHeader, setIsLoadingHeader] = useState(true);
+
+  useEffect(() => {
+    async function fetchHeaderData() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setIsLoadingHeader(false);
+          return;
+        }
+
+        const { data: perfil } = await supabase
+          .from('perfis')
+          .select('nome_usuario')
+          .eq('id', user.id)
+          .single();
+
+        const { data: membro } = await supabase
+          .from('membros_familia')
+          .select('familia_id')
+          .eq('perfil_id', user.id)
+          .in('status', ['ativo', 'host'])
+          .single();
+
+        if (!membro) {
+          setHeaderData({
+            nomeUsuario: perfil?.nome_usuario || 'Usuário',
+            nomeFamilia: 'Nenhuma Família',
+            participantes: []
+          });
+          setIsLoadingHeader(false);
+          return;
+        }
+
+        const { data: familia } = await supabase
+          .from('familias')
+          .select('nome')
+          .eq('id', membro.familia_id)
+          .single();
+
+        const { data: participantesData } = await supabase
+          .from('membros_familia')
+          .select('perfil_id')
+          .eq('familia_id', membro.familia_id)
+          .in('status', ['ativo', 'host']);
+
+        let participantesNomes: string[] = [];
+        if (participantesData && participantesData.length > 0) {
+          const perfilIds = participantesData.map(p => p.perfil_id);
+          const { data: perfisParticipantes } = await supabase
+            .from('perfis')
+            .select('nome_usuario, id')
+            .in('id', perfilIds);
+
+          if (perfisParticipantes) {
+            participantesNomes = perfisParticipantes.map(p => 
+              p.id === user.id ? 'Você' : (p.nome_usuario || 'Usuário')
+            );
+          }
+        }
+
+        setHeaderData({
+          nomeUsuario: perfil?.nome_usuario || 'Usuário',
+          nomeFamilia: familia?.nome || 'Família',
+          participantes: participantesNomes
+        });
+      } catch (err) {
+        console.error('Erro ao carregar header:', err);
+      } finally {
+        setIsLoadingHeader(false);
+      }
+    }
+
+    fetchHeaderData();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
 
   const navItems = [
     { name: 'Resumo', href: '/dashboard', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
@@ -41,17 +131,38 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <div className="p-6 border-t border-gray-100 overflow-hidden">
-          <Link href="/">
+          <button onClick={handleLogout} className="w-full text-left">
             <div className="flex items-center px-1 py-2 text-sm font-semibold text-gray-500 hover:text-black transition-colors" title="Sair">
-              <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+              <LogOut className="w-6 h-6 flex-shrink-0" />
               <span className="ml-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">Sair</span>
             </div>
-          </Link>
+          </button>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-0">
+      <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-0 relative">
+        {/* Dynamic Welcome Header */}
+        <header className="bg-white/80 backdrop-blur-md border-b border-gray-200/50 shadow-sm sticky top-0 z-40 px-6 md:px-10 py-5 flex items-center min-h-[85px]">
+          <div className="w-full">
+            {isLoadingHeader ? (
+              <div className="animate-pulse flex flex-col gap-2">
+                <div className="h-6 bg-gray-200 rounded w-48"></div>
+                <div className="h-4 bg-gray-200 rounded w-72"></div>
+              </div>
+            ) : headerData ? (
+              <>
+                <h2 className="text-xl font-bold text-gray-900 tracking-tight">
+                  Bem-vindo(a) <span className="text-blue-600">{headerData.nomeUsuario}</span>
+                </h2>
+                <p className="text-sm text-gray-600 mt-1 font-medium">
+                  Você está logado na <span className="font-bold text-gray-800">{headerData.nomeFamilia}</span>. Participantes ativos: <span className="font-bold text-gray-800">{headerData.participantes.join(', ')}</span>
+                </p>
+              </>
+            ) : null}
+          </div>
+        </header>
+
         {children}
       </div>
 

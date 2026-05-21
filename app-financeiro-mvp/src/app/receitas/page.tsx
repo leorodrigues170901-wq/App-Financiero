@@ -1,8 +1,9 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import TransactionModal from '@/components/TransactionModal';
 import { Pencil, Trash2, Plus, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 export default function ReceitasPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -12,15 +13,39 @@ export default function ReceitasPage() {
   const [currentDate, setCurrentDate] = useState(new Date(2026, 5)); // Junho 2026
   const [filtroResponsavel, setFiltroResponsavel] = useState('Todos');
 
-  const [receitas, setReceitas] = useState([
-    { id: 1, descricao: 'Investimento BTG', valor: 0.00, resp: 'Leo', status: 'Pendente' },
-    { id: 2, descricao: 'AMR Engenharia', valor: 2000.00, resp: 'Leo', status: 'Recebido' },
-    { id: 3, descricao: 'Salário Trinity', valor: 4740.00, resp: 'Leo', status: 'Recebido' },
-    { id: 4, descricao: 'Aluguel José Ariano - Elaine', valor: 3000.00, resp: 'Leo', status: 'Recebido' },
-    { id: 5, descricao: 'Vale alimentação Trinity', valor: 950.00, resp: 'Leo', status: 'Recebido' },
-    { id: 6, descricao: 'Salário Cras', valor: 2400.00, resp: 'Bia', status: 'Recebido' },
-    { id: 7, descricao: 'Pacientes', valor: 2610.00, resp: 'Bia', status: 'Recebido' },
-  ]);
+  const [receitas, setReceitas] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchReceitas = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('receitas')
+      .select('*')
+      .order('created_at', { ascending: true });
+    
+    if (error) {
+      console.error('Erro ao buscar receitas:', error);
+      setLoading(false);
+      return;
+    }
+
+    if (data) {
+      const mapped = data.map((item: any) => ({
+        id: item.id,
+        descricao: item.descricao,
+        valor: Number(item.valor),
+        resp: item.responsavel,
+        status: item.status,
+        created_at: item.created_at
+      }));
+      setReceitas(mapped);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchReceitas();
+  }, []);
 
   const handlePrevMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
@@ -43,8 +68,8 @@ export default function ReceitasPage() {
 
   // Cálculos Dinâmicos
   const totalPrevisto = filteredReceitas.reduce((acc, curr) => acc + curr.valor, 0);
-  const jaRecebido = filteredReceitas.filter(r => r.status === 'Recebido').reduce((acc, curr) => acc + curr.valor, 0);
-  const aReceber = filteredReceitas.filter(r => r.status !== 'Recebido').reduce((acc, curr) => acc + curr.valor, 0);
+  const jaRecebido = filteredReceitas.filter(r => r.status === 'Realizado' || r.status === 'Recebido').reduce((acc, curr) => acc + curr.valor, 0);
+  const aReceber = filteredReceitas.filter(r => r.status !== 'Realizado' && r.status !== 'Recebido').reduce((acc, curr) => acc + curr.valor, 0);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -52,17 +77,27 @@ export default function ReceitasPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Recebido': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'Pendente': return 'bg-amber-50 text-amber-700 border-amber-200';
-      default: return 'bg-gray-100 text-gray-700 border-gray-200';
+      case 'Recebido':
+      case 'Realizado':
+        return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'Pendente':
+      case 'Previsto':
+        return 'bg-amber-50 text-amber-700 border-amber-200';
+      default:
+        return 'bg-gray-100 text-gray-700 border-gray-200';
     }
   };
 
   const getStatusDot = (status: string) => {
     switch (status) {
-      case 'Recebido': return 'bg-blue-500';
-      case 'Pendente': return 'bg-amber-500';
-      default: return 'bg-gray-400';
+      case 'Recebido':
+      case 'Realizado':
+        return 'bg-blue-500';
+      case 'Pendente':
+      case 'Previsto':
+        return 'bg-amber-500';
+      default:
+        return 'bg-gray-400';
     }
   };
 
@@ -82,23 +117,57 @@ export default function ReceitasPage() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: any) => {
+    const { error } = await supabase
+      .from('receitas')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Erro ao deletar receita:', error);
+      return;
+    }
+
     setReceitas(receitas.filter(r => r.id !== id));
   };
 
-  const handleSaveModal = (data: any) => {
+  const handleSaveModal = async (data: any) => {
     // 1. Correção do Bug de Ponto Flutuante (Arredondamento Seguro)
     const parsedValor = parseFloat(data.valor?.toString().replace(',', '.') || '0');
     const safeValor = Number(parsedValor.toFixed(2));
     
-    const cleanData = { ...data, valor: safeValor };
+    const dbData = {
+      descricao: data.descricao,
+      valor: safeValor,
+      responsavel: data.resp,
+      status: data.status
+    };
 
     if (editingReceita) {
-      // 4. Modo de Edição: Atualiza o item existente
-      setReceitas(receitas.map(r => r.id === editingReceita.id ? { ...cleanData, id: editingReceita.id } : r));
+      // Modo de Edição: Atualiza o item existente
+      const { error } = await supabase
+        .from('receitas')
+        .update(dbData)
+        .eq('id', editingReceita.id);
+        
+      if (error) {
+        console.error('Erro ao atualizar receita:', error);
+        return;
+      }
+      
+      fetchReceitas();
     } else {
-      // 2. Criação: Insere o novo registro
-      setReceitas([...receitas, { ...cleanData, id: Date.now() }]);
+      // Criação: Insere o novo registro
+      const { error } = await supabase
+        .from('receitas')
+        .insert([dbData]);
+        
+      if (error) {
+        console.error('Erro ao inserir receita:', error);
+        return;
+      }
+      
+      fetchReceitas();
     }
   };
 
