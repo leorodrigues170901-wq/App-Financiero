@@ -69,7 +69,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             .in('id', perfilIds);
 
           if (perfisParticipantes) {
-            participantesNomes = perfisParticipantes.map(p => 
+            participantesNomes = perfisParticipantes.map(p =>
               p.id === user.id ? 'Você' : (p.nome_usuario || 'Usuário')
             );
           }
