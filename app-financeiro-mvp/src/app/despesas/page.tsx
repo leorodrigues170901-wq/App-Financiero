@@ -1,8 +1,10 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import TransactionModal from '@/components/TransactionModal';
 import { Pencil, Trash2, Plus, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { limparDinheiroParaBanco } from '@/lib/formatters';
 
 export default function DespesasPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -12,16 +14,63 @@ export default function DespesasPage() {
   const [currentDate, setCurrentDate] = useState(new Date(2026, 5)); // Junho 2026 (mês zero-index)
   const [filtroResponsavel, setFiltroResponsavel] = useState('Todos');
 
-  const [despesas, setDespesas] = useState([
-    { id: 1, descricao: 'Aluguel do Apartamento', resp: 'Casal', tipoDivisao: '50/50', auvp: 'Fixo Essencial', valor: 3500.00, status: 'Pago', categoria: 'Custo Fixo Assumido', formaPagamento: 'Conta Conjunta Itaú' },
-    { id: 2, descricao: 'Energia Elétrica', resp: 'Casal', tipoDivisao: 'Proporcional à Renda', auvp: 'Fixo Essencial', valor: 285.50, status: 'Pendente', categoria: 'Custo Fixo Assumido', formaPagamento: 'Conta Conjunta Itaú' },
-    { id: 3, descricao: 'Jantar Restaurante', resp: 'Leo', auvp: 'Conforto', valor: 180.00, status: 'Direcionado', categoria: 'Variável', formaPagamento: 'Fatura Cartão de Crédito' },
-    { id: 4, descricao: 'Curso de Especialização', resp: 'Bia', auvp: 'Metas', valor: 450.00, status: 'Pago', categoria: 'Custo Fixo Assumido', formaPagamento: 'Conta Conjunta Itaú' },
-    { id: 5, descricao: 'Assinatura Netflix', resp: 'Casal', tipoDivisao: '50/50', auvp: 'Conforto', valor: 55.90, status: 'Pendente', categoria: 'Recorrente Cancelável', formaPagamento: 'Fatura Cartão de Crédito' },
-    { id: 6, descricao: 'Viagem Fim de Ano (1/10)', resp: 'Casal', tipoDivisao: 'Proporcional à Renda', auvp: 'Liberdade', valor: 800.00, status: 'Direcionado', categoria: 'Variável', formaPagamento: 'Caixinha/Reserva Separada', isParcelado: true, parcelaAtual: 1, totalParcelas: 10 },
-    { id: 7, descricao: 'Academia', resp: 'Leo', auvp: 'Fixo Essencial', valor: 120.00, status: 'Pago', categoria: 'Custo Fixo Assumido', formaPagamento: 'Fatura Cartão de Crédito' },
-    { id: 8, descricao: 'Cosméticos', resp: 'Bia', auvp: 'Conforto', valor: 250.00, status: 'Pendente', categoria: 'Variável', formaPagamento: 'Fatura Cartão de Crédito' },
-  ]);
+  const [despesas, setDespesas] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [userData, setUserData] = useState<{perfilId: string, familiaId: string | null} | null>(null);
+
+  const fetchDespesas = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('despesas')
+      .select('*')
+      .order('data', { ascending: false });
+    
+    if (error) {
+      console.error('Erro ao buscar despesas:', error);
+      setLoading(false);
+      return;
+    }
+
+    if (data) {
+      const mapped = data.map((item: any) => ({
+        id: item.id,
+        descricao: item.descricao,
+        resp: item.responsavel,
+        tipoDivisao: item.tipo_divisao,
+        auvp: item.auvp,
+        valor: Number(item.valor),
+        status: item.status,
+        categoria: item.categoria,
+        formaPagamento: item.forma_pagamento,
+        isParcelado: item.is_parcelado,
+        parcelaAtual: item.parcela_atual,
+        totalParcelas: item.total_parcelas,
+        data: item.data
+      }));
+      setDespesas(mapped);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const { data: membro } = await supabase
+        .from('membros_familia')
+        .select('familia_id')
+        .eq('perfil_id', user.id)
+        .maybeSingle();
+        
+      setUserData({
+        perfilId: user.id,
+        familiaId: membro?.familia_id || null
+      });
+    };
+    fetchUserData();
+    fetchDespesas();
+  }, []);
 
   const handlePrevMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
@@ -104,15 +153,67 @@ export default function DespesasPage() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: any) => {
+    const { error } = await supabase
+      .from('despesas')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Erro ao deletar despesa:', error);
+      return;
+    }
+
     setDespesas(despesas.filter(d => d.id !== id));
   };
 
-  const handleSaveModal = (data: any) => {
+  const handleSaveModal = async (data: any) => {
+    if (!userData) {
+      console.error('Usuário não carregado');
+      return;
+    }
+
+    const safeValor = limparDinheiroParaBanco(data.valor);
+    
+    const dbData = {
+      descricao: data.descricao,
+      valor: safeValor,
+      responsavel: data.resp,
+      status: data.status,
+      categoria: data.categoria || 'Variável',
+      auvp: data.auvp,
+      tipo_divisao: data.tipoDivisao,
+      forma_pagamento: data.formaPagamento,
+      is_parcelado: data.isParcelado,
+      parcela_atual: data.parcelaAtual,
+      total_parcelas: data.totalParcelas,
+      perfil_id: userData.perfilId,
+      familia_id: userData.familiaId
+    };
+
     if (editingDespesa) {
-      setDespesas(despesas.map(d => d.id === editingDespesa.id ? { ...data, id: editingDespesa.id } : d));
+      const { error } = await supabase
+        .from('despesas')
+        .update(dbData)
+        .eq('id', editingDespesa.id);
+        
+      if (error) {
+        console.error('Erro ao atualizar despesa:', error);
+        return;
+      }
+      
+      fetchDespesas();
     } else {
-      setDespesas([...despesas, { ...data, id: Date.now() }]);
+      const { error } = await supabase
+        .from('despesas')
+        .insert([dbData]);
+        
+      if (error) {
+        console.error('Erro ao inserir despesa:', error);
+        return;
+      }
+      
+      fetchDespesas();
     }
   };
 
@@ -231,10 +332,18 @@ export default function DespesasPage() {
                   </tr>
                 </thead>
                 <tbody className="text-base divide-y divide-gray-100">
-                  {filteredDespesas.length === 0 ? (
+                  {loading ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center">
+                        <div className="flex justify-center items-center">
+                          <div className="w-6 h-6 border-2 border-gray-200 border-t-black rounded-full animate-spin"></div>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : filteredDespesas.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-12 text-center text-gray-500 font-medium">
-                        Nenhuma despesa encontrada para esse filtro.
+                        Nenhuma despesa encontrada. Adicione sua primeira despesa!
                       </td>
                     </tr>
                   ) : (

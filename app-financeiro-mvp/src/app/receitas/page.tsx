@@ -4,6 +4,7 @@ import AppLayout from '@/components/AppLayout';
 import TransactionModal from '@/components/TransactionModal';
 import { Pencil, Trash2, Plus, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { limparDinheiroParaBanco } from '@/lib/formatters';
 
 export default function ReceitasPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -15,13 +16,14 @@ export default function ReceitasPage() {
 
   const [receitas, setReceitas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userData, setUserData] = useState<{perfilId: string, familiaId: string | null} | null>(null);
 
   const fetchReceitas = async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('receitas')
       .select('*')
-      .order('created_at', { ascending: true });
+      .order('data', { ascending: false });
     
     if (error) {
       console.error('Erro ao buscar receitas:', error);
@@ -36,6 +38,8 @@ export default function ReceitasPage() {
         valor: Number(item.valor),
         resp: item.responsavel,
         status: item.status,
+        data: item.data,
+        categoria: item.categoria,
         created_at: item.created_at
       }));
       setReceitas(mapped);
@@ -44,6 +48,22 @@ export default function ReceitasPage() {
   };
 
   useEffect(() => {
+    const fetchUserData = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const { data: membro } = await supabase
+        .from('membros_familia')
+        .select('familia_id')
+        .eq('perfil_id', user.id)
+        .maybeSingle();
+        
+      setUserData({
+        perfilId: user.id,
+        familiaId: membro?.familia_id || null
+      });
+    };
+    fetchUserData();
     fetchReceitas();
   }, []);
 
@@ -132,15 +152,22 @@ export default function ReceitasPage() {
   };
 
   const handleSaveModal = async (data: any) => {
-    // 1. Correção do Bug de Ponto Flutuante (Arredondamento Seguro)
-    const parsedValor = parseFloat(data.valor?.toString().replace(',', '.') || '0');
-    const safeValor = Number(parsedValor.toFixed(2));
+    if (!userData) {
+      console.error('Usuário não carregado');
+      return;
+    }
+
+    // 1. Limpeza Segura do valor monetário
+    const safeValor = limparDinheiroParaBanco(data.valor);
     
     const dbData = {
       descricao: data.descricao,
       valor: safeValor,
       responsavel: data.resp,
-      status: data.status
+      status: data.status,
+      categoria: data.categoria || 'Geral', // Default caso não venha
+      perfil_id: userData.perfilId,
+      familia_id: userData.familiaId
     };
 
     if (editingReceita) {
@@ -285,10 +312,18 @@ export default function ReceitasPage() {
                   </tr>
                 </thead>
                 <tbody className="text-base divide-y divide-gray-100">
-                  {filteredReceitas.length === 0 ? (
+                  {loading ? (
+                    <tr>
+                      <td colSpan={5} className="py-12 text-center">
+                        <div className="flex justify-center items-center">
+                          <div className="w-6 h-6 border-2 border-gray-200 border-t-black rounded-full animate-spin"></div>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : filteredReceitas.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="py-12 text-center text-gray-500 font-medium">
-                        Nenhuma receita encontrada para esse filtro.
+                        Nenhuma receita encontrada. Adicione sua primeira entrada!
                       </td>
                     </tr>
                   ) : (

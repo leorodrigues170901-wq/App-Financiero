@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { formatarVisualmente, converterBancoParaInput } from '@/lib/formatters';
 
 export default function TransactionModal({ isOpen, onClose, initialData, onSave, type = 'despesa' }: any) {
   const [formData, setFormData] = useState({
@@ -21,7 +22,7 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
     if (initialData) {
       setFormData({
         descricao: initialData.descricao || '',
-        valor: initialData.valor !== undefined ? initialData.valor : '',
+        valor: initialData.valor !== undefined ? converterBancoParaInput(initialData.valor) : '',
         status: initialData.status || (type === 'receita' ? 'Recebido' : 'Pendente'),
         resp: initialData.resp || (type === 'receita' ? 'Leo' : 'Casal'),
         tipoDivisao: initialData.tipoDivisao || 'Proporcional à Renda',
@@ -102,11 +103,10 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Valor (R$)</label>
               <input 
-                type="number" 
-                value={formData.valor}
-                onChange={(e) => setFormData({...formData, valor: e.target.value})}
+                type="text" 
+                value={formatarVisualmente(formData.valor)}
+                onChange={(e) => setFormData({...formData, valor: e.target.value.replace(/\D/g, '')})}
                 placeholder="0,00" 
-                step="0.01"
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all font-mono"
               />
             </div>

@@ -32,29 +32,39 @@ export default function LoginPage() {
 
     try {
       if (isLogin) {
-        const { data, error: authError } = await supabase.auth.signInWithPassword({
+        const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+        if (authError) throw new Error('E-mail ou senha incorretos.');
+        if (data.session) router.push('/dashboard');
+      } else {
+        // 1. Cadastra o usuário e aciona a trigger de perfil
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
+          options: { data: { nome_completo: nomeCompleto, nome_usuario: nomeUsuario } }
         });
 
-        if (authError) {
-          setError('E-mail ou senha incorretos. Tente novamente.');
-          setIsLoading(false);
-          return;
+        if (signUpError) throw signUpError;
+        if (!signUpData.user) throw new Error('Falha ao criar usuário.');
+
+        // 2. Chama as RPCs que cuidam do resto sem bater no RLS do front
+        if (accountType === 'new_family') {
+          const { error: rpcError } = await supabase.rpc('criar_nova_familia', {
+            nome_da_familia: familyName
+          });
+          if (rpcError) throw new Error('Erro ao criar a família no banco de dados.');
+        } else if (accountType === 'join_family') {
+          const { error: rpcError } = await supabase.rpc('solicitar_entrada_familia', {
+            email_do_host: hostEmail
+          });
+          if (rpcError) throw new Error('Erro ao solicitar entrada. Verifique o e-mail do host.');
         }
 
-        if (data.session) {
-          router.push('/dashboard');
-        }
-      } else {
-        // Simular a criação da conta
-        setTimeout(() => {
-          setIsLoading(false);
-          setIsLogin(true); // Retorna para a tela de login após criar
-        }, 1500);
+        setIsLogin(true);
+        alert('Conta criada com sucesso! Faça o login para acessar o sistema.');
       }
-    } catch (err) {
-      setError('Ocorreu um erro inesperado. Verifique sua conexão.');
+    } catch (err: any) {
+      setError(err.message || 'Ocorreu um erro inesperado.');
+    } finally {
       setIsLoading(false);
     }
   };

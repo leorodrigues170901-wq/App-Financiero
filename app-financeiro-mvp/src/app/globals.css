@@ -32,3 +32,14 @@
 }
 
 /* Base styles for scrollbar etc could go here */
+
+/* Remoção de Spinners em inputs (seja number ou text disfarçado) */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  -moz-appearance: textfield;
+}
