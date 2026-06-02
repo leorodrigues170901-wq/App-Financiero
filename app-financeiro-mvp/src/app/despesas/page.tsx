@@ -5,13 +5,14 @@ import TransactionModal from '@/components/TransactionModal';
 import { Pencil, Trash2, Plus, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { limparDinheiroParaBanco } from '@/lib/formatters';
+import { useMonth } from '@/contexts/MonthContext';
 
 export default function DespesasPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingDespesa, setEditingDespesa] = useState<any>(null);
   
-  // Controle de Mês/Ano
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 5)); // Junho 2026 (mês zero-index)
+  // Controle de Mês/Ano via Contexto
+  const { currentDate, setCurrentDate } = useMonth();
   const [filtroResponsavel, setFiltroResponsavel] = useState('Todos');
 
   const [despesas, setDespesas] = useState<any[]>([]);
@@ -20,9 +21,16 @@ export default function DespesasPage() {
 
   const fetchDespesas = async () => {
     setLoading(true);
+    
+    // Formata primeiro e último dia do mês ativo localmente usando toISOString
+    const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+    const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59).toISOString();
+
     const { data, error } = await supabase
       .from('despesas')
       .select('*')
+      .gte('data', startOfMonth)
+      .lte('data', endOfMonth)
       .order('data', { ascending: false });
     
     if (error) {
@@ -69,8 +77,11 @@ export default function DespesasPage() {
       });
     };
     fetchUserData();
-    fetchDespesas();
   }, []);
+
+  useEffect(() => {
+    fetchDespesas();
+  }, [currentDate]);
 
   const handlePrevMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
@@ -175,10 +186,10 @@ export default function DespesasPage() {
 
     const safeValor = limparDinheiroParaBanco(data.valor);
     
-    const dbData = {
+    const dbData: any = {
       descricao: data.descricao,
       valor: safeValor,
-      responsavel: data.resp,
+      responsavel: data.respNome || data.resp,
       status: data.status,
       categoria: data.categoria || 'Variável',
       auvp: data.auvp,
@@ -187,11 +198,12 @@ export default function DespesasPage() {
       is_parcelado: data.isParcelado,
       parcela_atual: data.parcelaAtual,
       total_parcelas: data.totalParcelas,
-      perfil_id: userData.perfilId,
+      perfil_id: data.resp === 'Casal' ? userData.perfilId : data.resp,
       familia_id: userData.familiaId
     };
 
     if (editingDespesa) {
+      // Modo de Edição: Atualiza o item existente (mantém a data original)
       const { error } = await supabase
         .from('despesas')
         .update(dbData)
@@ -204,6 +216,9 @@ export default function DespesasPage() {
       
       fetchDespesas();
     } else {
+      // Criação: Insere o novo registro herdando o mês/ano selecionado na UI (dia 1º)
+      dbData.data = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+      
       const { error } = await supabase
         .from('despesas')
         .insert([dbData]);
@@ -342,8 +357,16 @@ export default function DespesasPage() {
                     </tr>
                   ) : filteredDespesas.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-12 text-center text-gray-500 font-medium">
-                        Nenhuma despesa encontrada. Adicione sua primeira despesa!
+                      <td colSpan={6} className="py-16 px-6 text-center">
+                        <div className="flex flex-col items-center justify-center max-w-md mx-auto">
+                          <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4 shadow-sm border border-gray-100">
+                            <Search className="w-8 h-8 text-gray-400" />
+                          </div>
+                          <h3 className="text-lg font-bold text-gray-900 font-manrope mb-2">Nenhum lançamento encontrado</h3>
+                          <p className="text-sm text-gray-500">
+                            Não há registros de despesas para este mês. Adicione seu primeiro lançamento!
+                          </p>
+                        </div>
                       </td>
                     </tr>
                   ) : (

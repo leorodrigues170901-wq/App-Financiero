@@ -2,27 +2,36 @@
 import { useState, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import TransactionModal from '@/components/TransactionModal';
-import { Pencil, Trash2, Plus, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Pencil, Trash2, Plus, Search, ChevronLeft, ChevronRight, Import } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { limparDinheiroParaBanco } from '@/lib/formatters';
+import { useMonth } from '@/contexts/MonthContext';
 
 export default function ReceitasPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingReceita, setEditingReceita] = useState<any>(null);
   
   // Controle de Mês/Ano
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 5)); // Junho 2026
+  const { currentDate, setCurrentDate } = useMonth();
   const [filtroResponsavel, setFiltroResponsavel] = useState('Todos');
 
   const [receitas, setReceitas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState<{perfilId: string, familiaId: string | null} | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   const fetchReceitas = async () => {
     setLoading(true);
+    
+    // Formata primeiro e último dia do mês ativo localmente usando toISOString
+    const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+    const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59).toISOString();
+
     const { data, error } = await supabase
       .from('receitas')
       .select('*')
+      .gte('data', startOfMonth)
+      .lte('data', endOfMonth)
       .order('data', { ascending: false });
     
     if (error) {
@@ -64,8 +73,31 @@ export default function ReceitasPage() {
       });
     };
     fetchUserData();
-    fetchReceitas();
   }, []);
+
+  useEffect(() => {
+    fetchReceitas();
+  }, [currentDate]);
+
+  const handleImportPreviousMonth = async () => {
+    if (!userData) return;
+    setIsImporting(true);
+    const ano = currentDate.getFullYear();
+    const mes = currentDate.getMonth() + 1;
+    
+    const { error } = await supabase.rpc('clonar_receitas_mes_anterior', {
+        ano_destino: ano,
+        mes_destino: mes,
+        f_id: userData.familiaId
+    });
+    
+    setIsImporting(false);
+    if (error) {
+        console.error('Erro ao importar receitas:', error);
+    } else {
+        fetchReceitas();
+    }
+  };
 
   const handlePrevMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
@@ -160,18 +192,18 @@ export default function ReceitasPage() {
     // 1. Limpeza Segura do valor monetário
     const safeValor = limparDinheiroParaBanco(data.valor);
     
-    const dbData = {
+    const dbData: any = {
       descricao: data.descricao,
       valor: safeValor,
-      responsavel: data.resp,
+      responsavel: data.respNome || data.resp,
       status: data.status,
       categoria: data.categoria || 'Geral', // Default caso não venha
-      perfil_id: userData.perfilId,
+      perfil_id: data.resp === 'Casal' ? userData.perfilId : data.resp,
       familia_id: userData.familiaId
     };
 
     if (editingReceita) {
-      // Modo de Edição: Atualiza o item existente
+      // Modo de Edição: Atualiza o item existente (mantém a data original)
       const { error } = await supabase
         .from('receitas')
         .update(dbData)
@@ -184,7 +216,9 @@ export default function ReceitasPage() {
       
       fetchReceitas();
     } else {
-      // Criação: Insere o novo registro
+      // Criação: Insere o novo registro herdando o mês/ano selecionado na UI (dia 1º)
+      dbData.data = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+      
       const { error } = await supabase
         .from('receitas')
         .insert([dbData]);
@@ -322,8 +356,28 @@ export default function ReceitasPage() {
                     </tr>
                   ) : filteredReceitas.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-12 text-center text-gray-500 font-medium">
-                        Nenhuma receita encontrada. Adicione sua primeira entrada!
+                      <td colSpan={5} className="py-16 px-6 text-center">
+                        <div className="flex flex-col items-center justify-center max-w-md mx-auto">
+                          <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4 shadow-sm border border-gray-100">
+                            <Search className="w-8 h-8 text-gray-400" />
+                          </div>
+                          <h3 className="text-lg font-bold text-gray-900 font-manrope mb-2">Nenhuma receita encontrada</h3>
+                          <p className="text-sm text-gray-500 mb-6">
+                            Não há entradas registradas para este mês. Você pode adicionar uma nova receita manualmente ou importar as do mês anterior.
+                          </p>
+                          <button 
+                            onClick={handleImportPreviousMonth}
+                            disabled={isImporting}
+                            className="inline-flex items-center gap-2 px-6 py-2.5 bg-white border border-gray-200 text-gray-800 font-semibold rounded-full hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50"
+                          >
+                            {isImporting ? (
+                              <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                            ) : (
+                              <Import className="w-4 h-4" />
+                            )}
+                            Importar receitas do mês anterior
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ) : (

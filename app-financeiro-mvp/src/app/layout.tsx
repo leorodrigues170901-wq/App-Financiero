@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Manrope } from "next/font/google";
 import "./globals.css";
+import { MonthProvider } from "@/contexts/MonthContext";
 
 const inter = Inter({ subsets: ["latin"], variable: '--font-inter' });
 const manrope = Manrope({ subsets: ["latin"], variable: '--font-manrope' });
@@ -18,7 +19,9 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className={`${inter.variable} ${manrope.variable}`}>
       <body suppressHydrationWarning className={`${inter.className} bg-[#cfddea] text-[#0f0f0f] antialiased min-h-screen`}>
-        {children}
+        <MonthProvider>
+          {children}
+        </MonthProvider>
       </body>
     </html>
   );

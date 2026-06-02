@@ -2,15 +2,19 @@
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { formatarVisualmente, converterBancoParaInput } from '@/lib/formatters';
+import { supabase } from '@/lib/supabase';
+
+const categoriasAUVP = ['Essencial', 'Investimento', 'Prazer', 'Meta Planejada', 'Oportunidade', 'Conforto', 'Aumentar Renda'];
 
 export default function TransactionModal({ isOpen, onClose, initialData, onSave, type = 'despesa' }: any) {
   const [formData, setFormData] = useState({
     descricao: '',
     valor: '',
     status: 'Pendente',
-    resp: 'Casal',
+    resp: 'Casal', // Guarda 'Casal' ou 'perfil_id'
+    respNome: 'Casal', // Guarda o nome para salvar em 'responsavel' se necessário
     tipoDivisao: 'Proporcional à Renda',
-    auvp: 'Fixo Essencial',
+    auvp: 'Essencial',
     categoria: 'Custo Fixo Assumido',
     formaPagamento: 'Conta Conjunta Itaú (PIX/Débito)',
     isParcelado: false,
@@ -18,38 +22,107 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
     totalParcelas: 12
   });
 
+  const [membrosDisponiveis, setMembrosDisponiveis] = useState<any[]>([]);
+
+  // Fetch Membros
+  useEffect(() => {
+    async function fetchMembros() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: membroFamily } = await supabase
+        .from('membros_familia')
+        .select('familia_id')
+        .eq('perfil_id', user.id)
+        .maybeSingle();
+
+      const familiaId = membroFamily?.familia_id;
+      let profilesData: any[] = [];
+
+      if (familiaId) {
+        const { data: membersList } = await supabase
+          .from('membros_familia')
+          .select('perfil_id, perfis(id, nome_usuario)')
+          .eq('familia_id', familiaId);
+        
+        profilesData = membersList?.map((m: any) => ({
+          id: m.perfis.id,
+          nome_usuario: m.perfis.nome_usuario || 'Usuário',
+        })) || [];
+      } else {
+        const { data: p } = await supabase.from('perfis').select('id, nome_usuario').eq('id', user.id).single();
+        if (p) profilesData = [{ id: p.id, nome_usuario: p.nome_usuario || 'Você' }];
+      }
+      
+      setMembrosDisponiveis(profilesData);
+
+      // Atualiza resp/respNome no caso de não ser edição e não ter 'Casal' selecionado
+      if (!initialData && type === 'receita' && profilesData.length > 0) {
+        // Se receita, por padrão pega o próprio usuário ou o primeiro da lista
+        const defaultMember = profilesData.find(m => m.id === user.id) || profilesData[0];
+        setFormData(prev => ({
+          ...prev,
+          resp: defaultMember.id,
+          respNome: defaultMember.nome_usuario
+        }));
+      }
+    }
+
+    if (isOpen) {
+      fetchMembros();
+    }
+  }, [isOpen, type, initialData]);
+
   useEffect(() => {
     if (initialData) {
+      // initialData.resp geralmente tem o nome ("Leo") ou ID dependendo do histórico.
+      // Com essa refatoração, garantimos que resp receba o ID quando for membro, e 'Casal' quando for 'Casal'
+      // Como dados antigos podem ter "Leo", deixamos o fallback
+      const oldRespName = initialData.responsavel || initialData.resp;
+      let foundId = oldRespName; // default (pode ser UUID se já migrado)
+      let foundName = oldRespName;
+
+      // Tenta achar na lista de membros se não for Casal
+      if (oldRespName !== 'Casal' && membrosDisponiveis.length > 0) {
+        const member = membrosDisponiveis.find(m => m.id === oldRespName || m.nome_usuario === oldRespName);
+        if (member) {
+          foundId = member.id;
+          foundName = member.nome_usuario;
+        }
+      }
+
       setFormData({
         descricao: initialData.descricao || '',
         valor: initialData.valor !== undefined ? converterBancoParaInput(initialData.valor) : '',
         status: initialData.status || (type === 'receita' ? 'Recebido' : 'Pendente'),
-        resp: initialData.resp || (type === 'receita' ? 'Leo' : 'Casal'),
-        tipoDivisao: initialData.tipoDivisao || 'Proporcional à Renda',
-        auvp: initialData.auvp || 'Fixo Essencial',
-        categoria: initialData.categoria || 'Custo Fixo Assumido',
-        formaPagamento: initialData.formaPagamento || 'Conta Conjunta Itaú (PIX/Débito)',
-        isParcelado: initialData.isParcelado || false,
-        parcelaAtual: initialData.parcelaAtual || 1,
-        totalParcelas: initialData.totalParcelas || 12
+        resp: foundId || (type === 'receita' ? '' : 'Casal'),
+        respNome: foundName || (type === 'receita' ? '' : 'Casal'),
+        tipoDivisao: initialData.tipoDivisao || initialData.tipo_divisao || 'Proporcional à Renda',
+        auvp: initialData.auvp || 'Essencial',
+        categoria: initialData.categoria || (type === 'receita' ? 'Entrada' : 'Custo Fixo Assumido'),
+        formaPagamento: initialData.formaPagamento || initialData.forma_pagamento || 'Conta Conjunta Itaú (PIX/Débito)',
+        isParcelado: initialData.isParcelado || initialData.is_parcelado || false,
+        parcelaAtual: initialData.parcelaAtual || initialData.parcela_atual || 1,
+        totalParcelas: initialData.totalParcelas || initialData.total_parcelas || 12
       });
     } else {
-      // Reset defaults for creation
-      setFormData({
+      // Já inicializamos no state e no fetchMembros, aqui só reset do valor
+      setFormData(prev => ({
+        ...prev,
         descricao: '',
         valor: '',
         status: type === 'receita' ? 'Recebido' : 'Pendente',
-        resp: type === 'receita' ? 'Leo' : 'Casal',
+        // resp/respNome são setados no fetchMembros
         tipoDivisao: 'Proporcional à Renda',
-        auvp: 'Fixo Essencial',
-        categoria: 'Custo Fixo Assumido',
+        auvp: 'Essencial',
+        categoria: type === 'receita' ? '' : 'Custo Fixo Assumido',
         formaPagamento: 'Conta Conjunta Itaú (PIX/Débito)',
         isParcelado: false,
         parcelaAtual: 1,
         totalParcelas: 12
-      });
+      }));
     }
-  }, [initialData, isOpen, type]);
+  }, [initialData, isOpen, type, membrosDisponiveis]);
 
   if (!isOpen) return null;
 
@@ -63,6 +136,20 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
   const buttonText = isEditing 
     ? 'Salvar Alterações' 
     : (isReceita ? 'Criar Receita' : 'Criar Despesa');
+
+  const handleRespChange = (e: any) => {
+    const val = e.target.value;
+    if (val === 'Casal') {
+      setFormData({...formData, resp: 'Casal', respNome: 'Casal'});
+    } else {
+      const selected = membrosDisponiveis.find(m => m.id === val);
+      setFormData({
+        ...formData, 
+        resp: val, 
+        respNome: selected ? selected.nome_usuario : val
+      });
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -138,12 +225,13 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Responsável</label>
               <select 
                 value={formData.resp}
-                onChange={(e) => setFormData({...formData, resp: e.target.value})}
+                onChange={handleRespChange}
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all appearance-none cursor-pointer"
               >
                 {!isReceita && <option value="Casal">Casal</option>}
-                <option value="Leo">Leo</option>
-                <option value="Bia">Bia</option>
+                {membrosDisponiveis.map(m => (
+                  <option key={m.id} value={m.id}>{m.nome_usuario}</option>
+                ))}
               </select>
             </div>
             
@@ -173,10 +261,9 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
                     onChange={(e) => setFormData({...formData, auvp: e.target.value})}
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all appearance-none cursor-pointer"
                   >
-                    <option value="Fixo Essencial">Fixo Essencial</option>
-                    <option value="Conforto">Conforto</option>
-                    <option value="Metas">Metas</option>
-                    <option value="Liberdade">Liberdade</option>
+                    {categoriasAUVP.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -193,6 +280,19 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
                   </select>
                 </div>
               </>
+            )}
+            
+            {isReceita && (
+              <div className="space-y-1.5 animate-fade-in">
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Categoria</label>
+                <input 
+                  type="text" 
+                  value={formData.categoria}
+                  onChange={(e) => setFormData({...formData, categoria: e.target.value})}
+                  placeholder="Ex: Salário, Rendimentos, Outros..." 
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                />
+              </div>
             )}
           </div>
 
