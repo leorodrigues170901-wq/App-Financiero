@@ -3,26 +3,35 @@ import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { formatarVisualmente, converterBancoParaInput } from '@/lib/formatters';
 import { supabase } from '@/lib/supabase';
+import { useMonth } from '@/contexts/MonthContext';
 
 const categoriasAUVP = ['Essencial', 'Investimento', 'Prazer', 'Meta Planejada', 'Oportunidade', 'Conforto', 'Aumentar Renda'];
+const CATEGORIAS_GASTOS = ['Custo Fixo Assumido', 'Custo Recorrente Cancelável', 'Custo Recorrente Planejado', 'Custo Variável'];
+const FORMAS_PAGAMENTO = ['Pix', 'Cartão de Crédito', 'Caixinha Reserva'];
+const TIPOS_DIVISAO = ['Igualitária', 'Proporcional à Renda', 'Personalizada'];
 
 export default function TransactionModal({ isOpen, onClose, initialData, onSave, type = 'despesa' }: any) {
   const [formData, setFormData] = useState({
     descricao: '',
     valor: '',
     status: 'Pendente',
-    resp: 'Casal', // Guarda 'Casal' ou 'perfil_id'
-    respNome: 'Casal', // Guarda o nome para salvar em 'responsavel' se necessário
-    tipoDivisao: 'Proporcional à Renda',
+    resp: 'Todos', // Guarda 'Todos' ou 'perfil_id'
+    respNome: 'Todos', // Guarda o nome para salvar em 'responsavel' se necessário
+    tipoDivisao: 'Igualitária',
     auvp: 'Essencial',
     categoria: 'Custo Fixo Assumido',
-    formaPagamento: 'Conta Conjunta Itaú (PIX/Débito)',
+    formaPagamento: 'Pix',
     isParcelado: false,
     parcelaAtual: 1,
     totalParcelas: 12
   });
 
   const [membrosDisponiveis, setMembrosDisponiveis] = useState<any[]>([]);
+  const [percentuaisPersonalizados, setPercentuaisPersonalizados] = useState<Record<string, number>>({});
+  
+  const { currentDate } = useMonth();
+  const [saldosMembros, setSaldosMembros] = useState<Record<string, {receitaTotal: number, despesaTotal: number, saldoDisponivel: number}>>({});
+  const [errorMsg, setErrorMsg] = useState<React.ReactNode | string | null>(null);
 
   // Fetch Membros
   useEffect(() => {
@@ -30,33 +39,50 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: membroFamily } = await supabase
+      const { data: userFam } = await supabase
         .from('membros_familia')
         .select('familia_id')
         .eq('perfil_id', user.id)
         .maybeSingle();
 
-      const familiaId = membroFamily?.familia_id;
       let profilesData: any[] = [];
 
-      if (familiaId) {
-        const { data: membersList } = await supabase
+      if (userFam?.familia_id) {
+        const { data: membrosFam } = await supabase
           .from('membros_familia')
-          .select('perfil_id, perfis(id, nome_usuario)')
-          .eq('familia_id', familiaId);
-        
-        profilesData = membersList?.map((m: any) => ({
-          id: m.perfis.id,
-          nome_usuario: m.perfis.nome_usuario || 'Usuário',
-        })) || [];
+          .select('perfil_id')
+          .eq('familia_id', userFam.familia_id)
+          .in('status', ['host', 'ativo']);
+          
+        if (membrosFam && membrosFam.length > 0) {
+          const ids = membrosFam.map(m => m.perfil_id);
+          const { data: perfis } = await supabase
+            .from('perfis')
+            .select('id, nome_usuario, cor_perfil')
+            .in('id', ids);
+            
+          profilesData = perfis?.map((p: any) => ({
+            id: p.id,
+            nome_usuario: p.nome_usuario || 'Usuário',
+            cor_perfil: p.cor_perfil || 'blue'
+          })) || [];
+        }
       } else {
-        const { data: p } = await supabase.from('perfis').select('id, nome_usuario').eq('id', user.id).single();
-        if (p) profilesData = [{ id: p.id, nome_usuario: p.nome_usuario || 'Você' }];
+        const { data: perfis } = await supabase
+          .from('perfis')
+          .select('id, nome_usuario, cor_perfil')
+          .eq('id', user.id);
+          
+        profilesData = perfis?.map((p: any) => ({
+          id: p.id,
+          nome_usuario: p.nome_usuario || 'Você',
+          cor_perfil: p.cor_perfil || 'blue'
+        })) || [];
       }
       
       setMembrosDisponiveis(profilesData);
 
-      // Atualiza resp/respNome no caso de não ser edição e não ter 'Casal' selecionado
+      // Atualiza resp/respNome no caso de não ser edição e não ter 'Todos' selecionado
       if (!initialData && type === 'receita' && profilesData.length > 0) {
         // Se receita, por padrão pega o próprio usuário ou o primeiro da lista
         const defaultMember = profilesData.find(m => m.id === user.id) || profilesData[0];
@@ -73,17 +99,72 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
     }
   }, [isOpen, type, initialData]);
 
+  // Fetch Saldos
+  useEffect(() => {
+    async function fetchSaldos() {
+      if (type === 'receita' || !currentDate || membrosDisponiveis.length === 0) return;
+
+      const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+      const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59).toISOString();
+
+      const memberIds = membrosDisponiveis.map(m => m.id);
+
+      const [{ data: receitasData }, { data: despesasData }] = await Promise.all([
+        supabase.from('receitas').select('perfil_id, valor').in('perfil_id', memberIds).gte('data', startOfMonth).lte('data', endOfMonth),
+        supabase.from('despesas').select('perfil_id, valor, responsaveis_divisao, id').gte('data', startOfMonth).lte('data', endOfMonth)
+      ]);
+
+      const newSaldos: Record<string, {receitaTotal: number, despesaTotal: number, saldoDisponivel: number}> = {};
+      membrosDisponiveis.forEach(m => {
+        newSaldos[m.id] = { receitaTotal: 0, despesaTotal: 0, saldoDisponivel: 0 };
+      });
+
+      if (receitasData) {
+        receitasData.forEach(r => {
+          if (newSaldos[r.perfil_id]) {
+            newSaldos[r.perfil_id].receitaTotal += Number(r.valor);
+          }
+        });
+      }
+
+      if (despesasData) {
+        despesasData.forEach(d => {
+          // Ignorar a despesa atual se estivermos editando
+          if (initialData && d.id === initialData.id) return;
+
+          if (d.responsaveis_divisao && Array.isArray(d.responsaveis_divisao)) {
+            d.responsaveis_divisao.forEach((div: any) => {
+              if (newSaldos[div.id]) {
+                newSaldos[div.id].despesaTotal += Number(div.valor);
+              }
+            });
+          } else if (newSaldos[d.perfil_id]) {
+            newSaldos[d.perfil_id].despesaTotal += Number(d.valor);
+          }
+        });
+      }
+
+      Object.keys(newSaldos).forEach(id => {
+        newSaldos[id].saldoDisponivel = newSaldos[id].receitaTotal - newSaldos[id].despesaTotal;
+      });
+
+      setSaldosMembros(newSaldos);
+    }
+
+    if (isOpen) {
+      fetchSaldos();
+    }
+  }, [isOpen, currentDate, membrosDisponiveis, type, initialData]);
+
   useEffect(() => {
     if (initialData) {
-      // initialData.resp geralmente tem o nome ("Leo") ou ID dependendo do histórico.
-      // Com essa refatoração, garantimos que resp receba o ID quando for membro, e 'Casal' quando for 'Casal'
-      // Como dados antigos podem ter "Leo", deixamos o fallback
-      const oldRespName = initialData.responsavel || initialData.resp;
+      // Refatoração baseada no perfil_id (fk real da tabela)
+      const oldRespName = initialData.perfil_id || initialData.responsavel || initialData.resp;
       let foundId = oldRespName; // default (pode ser UUID se já migrado)
       let foundName = oldRespName;
 
-      // Tenta achar na lista de membros se não for Casal
-      if (oldRespName !== 'Casal' && membrosDisponiveis.length > 0) {
+      // Tenta achar na lista de membros se não for Todos
+      if (oldRespName !== 'Todos' && oldRespName !== 'Casal' && membrosDisponiveis.length > 0) {
         const member = membrosDisponiveis.find(m => m.id === oldRespName || m.nome_usuario === oldRespName);
         if (member) {
           foundId = member.id;
@@ -95,15 +176,15 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
         descricao: initialData.descricao || '',
         valor: initialData.valor !== undefined ? converterBancoParaInput(initialData.valor) : '',
         status: initialData.status || (type === 'receita' ? 'Recebido' : 'Pendente'),
-        resp: foundId || (type === 'receita' ? '' : 'Casal'),
-        respNome: foundName || (type === 'receita' ? '' : 'Casal'),
-        tipoDivisao: initialData.tipoDivisao || initialData.tipo_divisao || 'Proporcional à Renda',
+        resp: (foundId === 'Casal' ? 'Todos' : foundId) || (type === 'receita' ? '' : 'Todos'),
+        respNome: (foundName === 'Casal' ? 'Todos' : foundName) || (type === 'receita' ? '' : 'Todos'),
+        tipoDivisao: initialData.tipoDivisao || initialData.tipo_divisao || 'Igualitária',
         auvp: initialData.auvp || 'Essencial',
         categoria: initialData.categoria || (type === 'receita' ? 'Entrada' : 'Custo Fixo Assumido'),
-        formaPagamento: initialData.formaPagamento || initialData.forma_pagamento || 'Conta Conjunta Itaú (PIX/Débito)',
-        isParcelado: initialData.isParcelado || initialData.is_parcelado || false,
-        parcelaAtual: initialData.parcelaAtual || initialData.parcela_atual || 1,
-        totalParcelas: initialData.totalParcelas || initialData.total_parcelas || 12
+        formaPagamento: initialData.formaPagamento || initialData.forma_pagamento || 'Pix',
+        isParcelado: initialData.parcelado || initialData.isParcelado || initialData.is_parcelado || false,
+        parcelaAtual: initialData.parcela_atual || initialData.parcelaAtual || 1,
+        totalParcelas: initialData.total_parcelas || initialData.totalParcelas || 1
       });
     } else {
       // Já inicializamos no state e no fetchMembros, aqui só reset do valor
@@ -113,10 +194,10 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
         valor: '',
         status: type === 'receita' ? 'Recebido' : 'Pendente',
         // resp/respNome são setados no fetchMembros
-        tipoDivisao: 'Proporcional à Renda',
+        tipoDivisao: 'Igualitária',
         auvp: 'Essencial',
         categoria: type === 'receita' ? '' : 'Custo Fixo Assumido',
-        formaPagamento: 'Conta Conjunta Itaú (PIX/Débito)',
+        formaPagamento: 'Pix',
         isParcelado: false,
         parcelaAtual: 1,
         totalParcelas: 12
@@ -139,8 +220,8 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
 
   const handleRespChange = (e: any) => {
     const val = e.target.value;
-    if (val === 'Casal') {
-      setFormData({...formData, resp: 'Casal', respNome: 'Casal'});
+    if (val === 'Todos') {
+      setFormData({...formData, resp: 'Todos', respNome: 'Todos'});
     } else {
       const selected = membrosDisponiveis.find(m => m.id === val);
       setFormData({
@@ -148,6 +229,160 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
         resp: val, 
         respNome: selected ? selected.nome_usuario : val
       });
+    }
+  };
+
+  const calcularRateio = (valorTotalNum: number) => {
+    let rateio: { id: string, nome: string, percentual: number, valor: number }[] = [];
+
+    if (formData.resp !== 'Todos') {
+      const membro = membrosDisponiveis.find(m => m.id === formData.resp);
+      if (membro) {
+        rateio.push({
+          id: membro.id,
+          nome: membro.nome_usuario,
+          percentual: 100,
+          valor: valorTotalNum
+        });
+      }
+    } else {
+      if (formData.tipoDivisao === 'Igualitária' || formData.tipoDivisao === '50/50') {
+        const numMembros = membrosDisponiveis.length;
+        const percentual = 100 / numMembros;
+        const valorPorMembro = valorTotalNum / numMembros;
+        membrosDisponiveis.forEach(m => {
+          rateio.push({
+            id: m.id,
+            nome: m.nome_usuario,
+            percentual: Number(percentual.toFixed(2)),
+            valor: Number(valorPorMembro.toFixed(2))
+          });
+        });
+      } else if (formData.tipoDivisao === 'Proporcional à Renda') {
+        let somaReceitas = 0;
+        membrosDisponiveis.forEach(m => {
+          somaReceitas += (saldosMembros[m.id]?.receitaTotal || 0);
+        });
+
+        membrosDisponiveis.forEach(m => {
+          let percentual = 0;
+          if (somaReceitas === 0) {
+            percentual = 100 / membrosDisponiveis.length;
+          } else {
+            const receitaMembro = saldosMembros[m.id]?.receitaTotal || 0;
+            percentual = (receitaMembro / somaReceitas) * 100;
+          }
+          const valor = (percentual / 100) * valorTotalNum;
+          rateio.push({
+            id: m.id,
+            nome: m.nome_usuario,
+            percentual: Number(percentual.toFixed(2)),
+            valor: Number(valor.toFixed(2))
+          });
+        });
+      } else if (formData.tipoDivisao === 'Personalizada') {
+        membrosDisponiveis.forEach(m => {
+          const perc = percentuaisPersonalizados[m.id] || 0;
+          const valor = (perc / 100) * valorTotalNum;
+          rateio.push({
+            id: m.id,
+            nome: m.nome_usuario,
+            percentual: perc,
+            valor: Number(valor.toFixed(2))
+          });
+        });
+      }
+    }
+    
+    if (rateio.length > 0) {
+      const somaValores = rateio.reduce((acc, curr) => acc + curr.valor, 0);
+      const diff = valorTotalNum - somaValores;
+      if (Math.abs(diff) > 0.001) {
+        rateio[0].valor = Number((rateio[0].valor + diff).toFixed(2));
+      }
+    }
+
+    return rateio;
+  };
+
+  const handleSaveClick = () => {
+    setErrorMsg(null);
+    const rawValue = formData.valor.replace(/\D/g, '');
+    const valorNumerico = Number(rawValue) / 100;
+    
+    const formatCurrency = (val: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
+
+    if (valorNumerico <= 0) {
+      setErrorMsg('O valor deve ser maior que zero.');
+      return;
+    }
+
+    if (!isReceita) {
+      if (formData.resp === 'Todos' && formData.tipoDivisao === 'Personalizada') {
+        let soma = 0;
+        membrosDisponiveis.forEach(m => {
+          soma += (percentuaisPersonalizados[m.id] || 0);
+        });
+        if (Math.abs(soma - 100) > 0.01) {
+          setErrorMsg('A soma das porcentagens deve ser exatamente 100%.');
+          return;
+        }
+      }
+
+      const rateioArray = calcularRateio(valorNumerico);
+
+      // HARD BLOCK
+      const membrosSemSaldo: any[] = [];
+      for (const fatia of rateioArray) {
+        const saldoDisp = saldosMembros[fatia.id]?.saldoDisponivel || 0;
+        if (fatia.valor > saldoDisp) {
+           const membroDetalhe = membrosDisponiveis.find(m => m.id === fatia.id);
+           membrosSemSaldo.push({
+             id: fatia.id,
+             nome: fatia.nome,
+             cor: membroDetalhe?.cor_perfil || 'red',
+             deficit: fatia.valor - saldoDisp
+           });
+        }
+      }
+
+      if (membrosSemSaldo.length > 0) {
+        setErrorMsg(
+          <div className="flex flex-col gap-1">
+            <span className="font-bold text-red-600">Bloqueio Rígido: Saldo insuficiente.</span>
+            <span className="text-sm text-red-500 mb-2">Para salvar esta despesa, é necessário cadastrar novas receitas para cobrir os valores faltantes:</span>
+            <ul className="list-disc pl-5 text-sm">
+              {membrosSemSaldo.map(m => (
+                <li key={m.id} className="text-red-500">
+                  <span className={`font-bold text-${m.cor}-500`}>{m.nome}</span> precisa de mais <span className="font-bold">{formatCurrency(m.deficit)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+        return;
+      }
+
+      const payloadDespesa = {
+        descricao: formData.descricao,
+        valor: formData.valor,
+        status: formData.status,
+        classificacao_auvp: formData.auvp,
+        categoria_gastos: formData.categoria,
+        forma_pagamento: formData.formaPagamento,
+        tipo_divisao: formData.tipoDivisao,
+        responsaveis_divisao: rateioArray,
+        parcelado: formData.isParcelado,
+        parcela_atual: formData.parcelaAtual,
+        total_parcelas: formData.totalParcelas,
+        resp: formData.resp
+      };
+
+      if (onSave) onSave(payloadDespesa);
+      onClose();
+    } else {
+      if (onSave) onSave({...formData});
+      onClose();
     }
   };
 
@@ -170,6 +405,12 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
           </button>
         </div>
 
+        {errorMsg && (
+          <div className="mx-6 mt-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-semibold animate-fade-in">
+            {errorMsg}
+          </div>
+        )}
+
         {/* Form Body */}
         <div className="p-6 overflow-y-auto custom-scrollbar space-y-5">
           
@@ -184,9 +425,7 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
               />
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Valor (R$)</label>
               <input 
@@ -197,6 +436,7 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all font-mono"
               />
             </div>
+
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</label>
               <select 
@@ -212,31 +452,29 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
                 ) : (
                   <>
                     <option value="Pendente">Pendente</option>
-                    <option value="Pago">Pago</option>
-                    <option value="Direcionado">Direcionado</option>
+                    <option value="Realizado">Realizado</option>
                   </>
                 )}
               </select>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Responsável</label>
               <select 
                 value={formData.resp}
                 onChange={handleRespChange}
+                disabled={membrosDisponiveis.length === 1}
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all appearance-none cursor-pointer"
               >
-                {!isReceita && <option value="Casal">Casal</option>}
+                {!isReceita && <option value="Todos">Todos</option>}
                 {membrosDisponiveis.map(m => (
                   <option key={m.id} value={m.id}>{m.nome_usuario}</option>
                 ))}
               </select>
             </div>
             
-            {/* Lógica Condicional: Exibir "Tipo de Divisão" apenas se o responsável for "Casal" */}
-            {!isReceita && formData.resp === 'Casal' ? (
+            {/* Lógica Condicional: Exibir "Tipo de Divisão" apenas se o responsável for "Todos" */}
+            {!isReceita && formData.resp === 'Todos' ? (
               <div className="space-y-1.5 animate-fade-in">
                 <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Tipo de Divisão</label>
                 <select 
@@ -244,14 +482,39 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
                   onChange={(e) => setFormData({...formData, tipoDivisao: e.target.value})}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all appearance-none cursor-pointer"
                 >
-                  <option value="Proporcional à Renda">Proporcional à Renda</option>
-                  <option value="50/50">50/50</option>
+                  {TIPOS_DIVISAO.map(tipo => (
+                    <option key={tipo} value={tipo}>{tipo}</option>
+                  ))}
                 </select>
               </div>
             ) : (
               <div className="hidden md:block"></div>
             )}
             
+            {/* Divisão Personalizada */}
+            {!isReceita && formData.resp === 'Todos' && formData.tipoDivisao === 'Personalizada' && (
+              <div className="md:col-span-2 bg-gray-50 border border-gray-200 rounded-2xl p-4 animate-fade-in space-y-3 mt-1">
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider block">Porcentagem por Membro (%)</label>
+                <div className="grid grid-cols-2 gap-4">
+                  {membrosDisponiveis.map(m => (
+                    <div key={m.id} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+                      <span className="text-sm font-medium text-gray-700 flex-1 truncate">{m.nome_usuario}</span>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="number"
+                          value={percentuaisPersonalizados[m.id] || ''}
+                          onChange={(e) => setPercentuaisPersonalizados({...percentuaisPersonalizados, [m.id]: Number(e.target.value)})}
+                          placeholder="0"
+                          className="w-16 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-black transition-all font-mono"
+                        />
+                        <span className="text-gray-500 font-semibold text-sm">%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {!isReceita && (
               <>
                 <div className="space-y-1.5">
@@ -274,44 +537,28 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
                     onChange={(e) => setFormData({...formData, categoria: e.target.value})}
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all appearance-none cursor-pointer"
                   >
-                    <option value="Custo Fixo Assumido">Custo Fixo Assumido</option>
-                    <option value="Recorrente Cancelável">Recorrente Cancelável</option>
-                    <option value="Variável">Variável</option>
+                    {CATEGORIAS_GASTOS.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Forma de Pagamento</label>
+                  <select 
+                    value={formData.formaPagamento}
+                    onChange={(e) => setFormData({...formData, formaPagamento: e.target.value})}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all appearance-none cursor-pointer"
+                  >
+                    {FORMAS_PAGAMENTO.map(forma => (
+                      <option key={forma} value={forma}>{forma}</option>
+                    ))}
                   </select>
                 </div>
               </>
             )}
             
-            {isReceita && (
-              <div className="space-y-1.5 animate-fade-in">
-                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Categoria</label>
-                <input 
-                  type="text" 
-                  value={formData.categoria}
-                  onChange={(e) => setFormData({...formData, categoria: e.target.value})}
-                  placeholder="Ex: Salário, Rendimentos, Outros..." 
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
-                />
-              </div>
-            )}
           </div>
-
-          {!isReceita && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div className="space-y-1.5 md:col-span-2">
-                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Forma de Pagamento</label>
-                <select 
-                  value={formData.formaPagamento}
-                  onChange={(e) => setFormData({...formData, formaPagamento: e.target.value})}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all appearance-none cursor-pointer"
-                >
-                  <option value="Conta Conjunta Itaú (PIX/Débito)">Conta Conjunta Itaú (PIX/Débito)</option>
-                  <option value="Fatura Cartão de Crédito">Fatura Cartão de Crédito</option>
-                  <option value="Caixinha/Reserva Separada">Caixinha/Reserva Separada</option>
-                </select>
-              </div>
-            </div>
-          )}
 
           {!isReceita && (
             <div className="bg-gray-50 border border-gray-200 rounded-2xl p-5 space-y-3 mt-2">
@@ -364,10 +611,7 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
             Cancelar
           </button>
           <button 
-            onClick={() => {
-              if (onSave) onSave(formData);
-              onClose();
-            }}
+            onClick={handleSaveClick}
             className="px-6 py-2.5 text-sm font-bold text-white bg-black hover:bg-gray-800 rounded-xl shadow-md transition-all active:scale-95"
           >
             {buttonText}

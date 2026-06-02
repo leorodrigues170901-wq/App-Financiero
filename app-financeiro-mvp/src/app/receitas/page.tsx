@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import AppLayout from '@/components/AppLayout';
 import TransactionModal from '@/components/TransactionModal';
 import { Pencil, Trash2, Plus, Search, ChevronLeft, ChevronRight, Import } from 'lucide-react';
@@ -13,26 +13,99 @@ export default function ReceitasPage() {
   
   // Controle de Mês/Ano
   const { currentDate, setCurrentDate } = useMonth();
-  const [filtroResponsavel, setFiltroResponsavel] = useState('Todos');
-
+  
   const [receitas, setReceitas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState<{perfilId: string, familiaId: string | null} | null>(null);
+  
+  const [membrosAtivos, setMembrosAtivos] = useState<{id: string, nome: string, cor: string}[]>([]);
+  const [filtroUsuariosSelecionados, setFiltroUsuariosSelecionados] = useState<string[]>(['Todos']);
   const [isImporting, setIsImporting] = useState(false);
 
-  const fetchReceitas = async () => {
+  useEffect(() => {
+    const fetchUserData = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const { data: userFam } = await supabase
+        .from('membros_familia')
+        .select('familia_id')
+        .eq('perfil_id', user.id)
+        .maybeSingle(); // maybeSingle para prevenir erro se não achar
+        
+      setUserData({
+        perfilId: user.id,
+        familiaId: userFam?.familia_id || null
+      });
+
+      // Buscar Membros Ativos
+      let membersData: any[] = [];
+      if (userFam?.familia_id) {
+        const { data: membrosFam } = await supabase
+          .from('membros_familia')
+          .select('perfil_id')
+          .eq('familia_id', userFam.familia_id)
+          .in('status', ['host', 'ativo']);
+          
+        if (membrosFam && membrosFam.length > 0) {
+          const ids = membrosFam.map(m => m.perfil_id);
+          const { data: perfis } = await supabase
+            .from('perfis')
+            .select('id, nome_usuario, cor_perfil')
+            .in('id', ids);
+            
+          membersData = perfis?.map((p: any) => ({
+            id: p.id,
+            nome: p.nome_usuario || 'Usuário',
+            cor: p.cor_perfil || 'slate'
+          })) || [];
+        }
+      } else {
+        const { data: perfis } = await supabase
+          .from('perfis')
+          .select('id, nome_usuario, cor_perfil')
+          .eq('id', user.id);
+          
+        membersData = perfis?.map((p: any) => ({
+          id: p.id,
+          nome: p.nome_usuario || 'Você',
+          cor: p.cor_perfil || 'slate'
+        })) || [];
+      }
+      setMembrosAtivos(membersData);
+    };
+    fetchUserData();
+  }, []);
+
+  const fetchReceitas = useCallback(async () => {
+    if (!userData) return;
     setLoading(true);
     
-    // Formata primeiro e último dia do mês ativo localmente usando toISOString
     const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
     const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('receitas')
       .select('*')
       .gte('data', startOfMonth)
       .lte('data', endOfMonth)
       .order('data', { ascending: false });
+    
+    // Filtro por Família/Perfil
+    if (userData.familiaId) {
+      query = query.eq('familia_id', userData.familiaId);
+    } else {
+      query = query.eq('perfil_id', userData.perfilId);
+    }
+
+    // Filtro de Responsável via Supabase
+    if (!filtroUsuariosSelecionados.includes('Todos')) {
+      if (filtroUsuariosSelecionados.length > 0) {
+        query = query.in('perfil_id', filtroUsuariosSelecionados);
+      }
+    }
+
+    const { data, error } = await query;
     
     if (error) {
       console.error('Erro ao buscar receitas:', error);
@@ -45,39 +118,36 @@ export default function ReceitasPage() {
         id: item.id,
         descricao: item.descricao,
         valor: Number(item.valor),
-        resp: item.responsavel,
+        perfil_id: item.perfil_id,
         status: item.status,
         data: item.data,
-        categoria: item.categoria,
         created_at: item.created_at
       }));
       setReceitas(mapped);
     }
     setLoading(false);
-  };
-
-  useEffect(() => {
-    const fetchUserData = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      
-      const { data: membro } = await supabase
-        .from('membros_familia')
-        .select('familia_id')
-        .eq('perfil_id', user.id)
-        .maybeSingle();
-        
-      setUserData({
-        perfilId: user.id,
-        familiaId: membro?.familia_id || null
-      });
-    };
-    fetchUserData();
-  }, []);
+  }, [currentDate, userData, filtroUsuariosSelecionados]);
 
   useEffect(() => {
     fetchReceitas();
-  }, [currentDate]);
+  }, [fetchReceitas]);
+
+  const toggleFiltroResponsavel = (id: string) => {
+    if (id === 'Todos') {
+      setFiltroUsuariosSelecionados(['Todos']);
+    } else {
+      let novaSelecao = filtroUsuariosSelecionados.filter(item => item !== 'Todos');
+      if (novaSelecao.includes(id)) {
+        novaSelecao = novaSelecao.filter(item => item !== id);
+        if (novaSelecao.length === 0) {
+          novaSelecao = ['Todos'];
+        }
+      } else {
+        novaSelecao.push(id);
+      }
+      setFiltroUsuariosSelecionados(novaSelecao);
+    }
+  };
 
   const handleImportPreviousMonth = async () => {
     if (!userData) return;
@@ -110,18 +180,10 @@ export default function ReceitasPage() {
   const formattedMonth = currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   const displayMonth = formattedMonth.charAt(0).toUpperCase() + formattedMonth.slice(1);
 
-  const opcoesFiltro = ['Todos', 'Leo', 'Bia'];
-
-  // Lógica de Filtragem
-  const filteredReceitas = receitas.filter(r => {
-    if (filtroResponsavel === 'Todos') return true;
-    return r.resp === filtroResponsavel;
-  });
-
-  // Cálculos Dinâmicos
-  const totalPrevisto = filteredReceitas.reduce((acc, curr) => acc + curr.valor, 0);
-  const jaRecebido = filteredReceitas.filter(r => r.status === 'Realizado' || r.status === 'Recebido').reduce((acc, curr) => acc + curr.valor, 0);
-  const aReceber = filteredReceitas.filter(r => r.status !== 'Realizado' && r.status !== 'Recebido').reduce((acc, curr) => acc + curr.valor, 0);
+  // Cálculos Dinâmicos baseados nas receitas já filtradas no back-end
+  const totalPrevisto = receitas.reduce((acc, curr) => acc + curr.valor, 0);
+  const jaRecebido = receitas.filter(r => r.status === 'Recebido').reduce((acc, curr) => acc + curr.valor, 0);
+  const aReceber = receitas.filter(r => r.status === 'Pendente').reduce((acc, curr) => acc + curr.valor, 0);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -130,10 +192,8 @@ export default function ReceitasPage() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Recebido':
-      case 'Realizado':
         return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'Pendente':
-      case 'Previsto':
         return 'bg-amber-50 text-amber-700 border-amber-200';
       default:
         return 'bg-gray-100 text-gray-700 border-gray-200';
@@ -143,20 +203,66 @@ export default function ReceitasPage() {
   const getStatusDot = (status: string) => {
     switch (status) {
       case 'Recebido':
-      case 'Realizado':
         return 'bg-blue-500';
       case 'Pendente':
-      case 'Previsto':
         return 'bg-amber-500';
       default:
         return 'bg-gray-400';
     }
   };
 
-  const getRespIcon = (resp: string) => {
-    if (resp === 'Leo') return <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold shadow-sm shrink-0">L</div>;
-    if (resp === 'Bia') return <div className="w-6 h-6 rounded-full bg-pink-500 text-white flex items-center justify-center text-[10px] font-bold shadow-sm shrink-0">B</div>;
-    return null;
+  const bgColors: Record<string, string> = {
+    blue: "bg-blue-100 text-blue-700",
+    pink: "bg-pink-100 text-pink-700",
+    emerald: "bg-emerald-100 text-emerald-700",
+    purple: "bg-purple-100 text-purple-700",
+    amber: "bg-amber-100 text-amber-700",
+    teal: "bg-teal-100 text-teal-700",
+    cyan: "bg-cyan-100 text-cyan-700",
+    indigo: "bg-indigo-100 text-indigo-700",
+    rose: "bg-rose-100 text-rose-700",
+    orange: "bg-orange-100 text-orange-700",
+    slate: "bg-slate-100 text-slate-700",
+  };
+
+  const bgHoverColors: Record<string, string> = {
+    blue: "hover:bg-blue-100 hover:text-blue-700",
+    pink: "hover:bg-pink-100 hover:text-pink-700",
+    emerald: "hover:bg-emerald-100 hover:text-emerald-700",
+    purple: "hover:bg-purple-100 hover:text-purple-700",
+    amber: "hover:bg-amber-100 hover:text-amber-700",
+    teal: "hover:bg-teal-100 hover:text-teal-700",
+    cyan: "hover:bg-cyan-100 hover:text-cyan-700",
+    indigo: "hover:bg-indigo-100 hover:text-indigo-700",
+    rose: "hover:bg-rose-100 hover:text-rose-700",
+    orange: "hover:bg-orange-100 hover:text-orange-700",
+    slate: "hover:bg-slate-100 hover:text-slate-700",
+  };
+
+  const ringColors: Record<string, string> = {
+    blue: "ring-blue-500",
+    pink: "ring-pink-500",
+    emerald: "ring-emerald-500",
+    purple: "ring-purple-500",
+    amber: "ring-amber-500",
+    teal: "ring-teal-500",
+    cyan: "ring-cyan-500",
+    indigo: "ring-indigo-500",
+    rose: "ring-rose-500",
+    orange: "ring-orange-500",
+    slate: "ring-slate-500",
+  };
+
+  const getRespBadge = (perfil_id: string) => {
+    const membro = membrosAtivos.find(m => m.id === perfil_id);
+    const nomeExibicao = membro ? membro.nome : 'Desconhecido';
+    const corBadge = membro ? membro.cor : 'slate';
+    
+    return (
+      <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${bgColors[corBadge] || bgColors.slate}`}>
+        <span>{nomeExibicao}</span>
+      </div>
+    );
   };
 
   const handleOpenCreate = () => {
@@ -189,34 +295,33 @@ export default function ReceitasPage() {
       return;
     }
 
-    // 1. Limpeza Segura do valor monetário
+    // Limpeza Segura do valor monetário
     const safeValor = limparDinheiroParaBanco(data.valor);
     
     const dbData: any = {
       descricao: data.descricao,
       valor: safeValor,
-      responsavel: data.respNome || data.resp,
       status: data.status,
-      categoria: data.categoria || 'Geral', // Default caso não venha
+      // Categoria agora é opcional e não é enviada para receita pelo modal
       perfil_id: data.resp === 'Casal' ? userData.perfilId : data.resp,
       familia_id: userData.familiaId
     };
 
     if (editingReceita) {
-      // Modo de Edição: Atualiza o item existente (mantém a data original)
+      // Remove o id do payload por segurança
+      const { id, ...payload } = dbData;
+      
       const { error } = await supabase
         .from('receitas')
-        .update(dbData)
+        .update(payload)
         .eq('id', editingReceita.id);
         
       if (error) {
-        console.error('Erro ao atualizar receita:', error);
+        console.error('Erro ao atualizar receita:', error?.message || error);
         return;
       }
-      
       fetchReceitas();
     } else {
-      // Criação: Insere o novo registro herdando o mês/ano selecionado na UI (dia 1º)
       dbData.data = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
       
       const { error } = await supabase
@@ -224,10 +329,9 @@ export default function ReceitasPage() {
         .insert([dbData]);
         
       if (error) {
-        console.error('Erro ao inserir receita:', error);
+        console.error('Erro ao inserir receita:', error?.message || error);
         return;
       }
-      
       fetchReceitas();
     }
   };
@@ -279,21 +383,36 @@ export default function ReceitasPage() {
               </div>
             </div>
 
-            <div className="mt-5 flex gap-2 overflow-x-auto no-scrollbar pb-1">
-              {opcoesFiltro.map(opcao => (
+            {membrosAtivos.length > 1 && (
+              <div className="mt-5 flex gap-2 overflow-x-auto no-scrollbar pb-1">
                 <button
-                  key={opcao}
-                  onClick={() => setFiltroResponsavel(opcao)}
+                  onClick={() => toggleFiltroResponsavel('Todos')}
                   className={`px-4 py-1.5 text-[11px] font-bold rounded-full transition-all uppercase tracking-wider whitespace-nowrap ${
-                    filtroResponsavel === opcao 
+                    filtroUsuariosSelecionados.includes('Todos') 
                       ? 'bg-gray-900 text-white shadow-md' 
                       : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-black'
                   }`}
                 >
-                  {opcao}
+                  Todos
                 </button>
-              ))}
-            </div>
+                {membrosAtivos.map(membro => {
+                  const isSelected = filtroUsuariosSelecionados.includes(membro.id);
+                  return (
+                    <button
+                      key={membro.id}
+                      onClick={() => toggleFiltroResponsavel(membro.id)}
+                      className={`px-4 py-1.5 text-[11px] font-bold rounded-full transition-all uppercase tracking-wider whitespace-nowrap border ${
+                        isSelected 
+                          ? `${bgColors[membro.cor]} border-transparent shadow-sm ring-2 ring-offset-1 ${ringColors[membro.cor] || 'ring-slate-500'}` 
+                          : `bg-white border-gray-200 text-gray-500 ${bgHoverColors[membro.cor] || 'hover:bg-slate-100 hover:text-slate-700'}`
+                      }`}
+                    >
+                      {membro.nome}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
           </div>
         </div>
@@ -304,23 +423,20 @@ export default function ReceitasPage() {
             <div className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate">
                 Receita Total
-                {filtroResponsavel !== 'Todos' && <span className="opacity-60 lowercase font-medium bg-gray-100 px-2 py-0.5 rounded-full text-[10px]">({filtroResponsavel})</span>}
               </p>
               <p className="text-3xl font-manrope font-semibold tracking-tight text-gray-900">{formatCurrency(totalPrevisto)}</p>
             </div>
             
             <div className="bg-blue-50/60 border border-blue-100 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all">
               <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate">
-                Já Recebido
-                {filtroResponsavel !== 'Todos' && <span className="opacity-60 lowercase font-medium bg-blue-100 px-2 py-0.5 rounded-full text-[10px]">({filtroResponsavel})</span>}
+                Recebido
               </p>
               <p className="text-3xl font-manrope font-semibold tracking-tight text-blue-700">{formatCurrency(jaRecebido)}</p>
             </div>
             
             <div className="bg-amber-50/60 border border-amber-100 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all">
               <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate">
-                A Receber
-                {filtroResponsavel !== 'Todos' && <span className="opacity-60 lowercase font-medium bg-amber-100 px-2 py-0.5 rounded-full text-[10px]">({filtroResponsavel})</span>}
+                Pendente
               </p>
               <p className="text-3xl font-manrope font-semibold tracking-tight text-amber-700">{formatCurrency(aReceber)}</p>
             </div>
@@ -330,7 +446,7 @@ export default function ReceitasPage() {
             
             <div className="flex justify-between items-center mb-6">
                <h2 className="text-xl font-semibold font-manrope text-gray-800">
-                 {filteredReceitas.length} {filteredReceitas.length === 1 ? 'Entrada encontrada' : 'Entradas encontradas'}
+                 {receitas.length} {receitas.length === 1 ? 'Entrada encontrada' : 'Entradas encontradas'}
                </h2>
             </div>
 
@@ -354,7 +470,7 @@ export default function ReceitasPage() {
                         </div>
                       </td>
                     </tr>
-                  ) : filteredReceitas.length === 0 ? (
+                  ) : receitas.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="py-16 px-6 text-center">
                         <div className="flex flex-col items-center justify-center max-w-md mx-auto">
@@ -363,7 +479,7 @@ export default function ReceitasPage() {
                           </div>
                           <h3 className="text-lg font-bold text-gray-900 font-manrope mb-2">Nenhuma receita encontrada</h3>
                           <p className="text-sm text-gray-500 mb-6">
-                            Não há entradas registradas para este mês. Você pode adicionar uma nova receita manualmente ou importar as do mês anterior.
+                            Não há entradas registradas para este mês ou para o filtro selecionado. Você pode adicionar uma nova receita manualmente ou importar as do mês anterior.
                           </p>
                           <button 
                             onClick={handleImportPreviousMonth}
@@ -381,15 +497,14 @@ export default function ReceitasPage() {
                       </td>
                     </tr>
                   ) : (
-                    filteredReceitas.map((item) => (
+                    receitas.map((item) => (
                       <tr key={item.id} className="hover:bg-gray-50/80 transition-colors group align-middle">
                         <td className="py-4 px-4 text-left">
                           <p className="font-semibold text-gray-800 truncate max-w-[250px]">{item.descricao}</p>
                         </td>
                         <td className="py-4 px-4 text-center">
                           <div className="flex items-center justify-center gap-2">
-                            {getRespIcon(item.resp)}
-                            <span className="text-sm font-semibold text-gray-700">{item.resp}</span>
+                            {getRespBadge(item.perfil_id)}
                           </div>
                         </td>
                         <td className="py-4 px-4 text-center">

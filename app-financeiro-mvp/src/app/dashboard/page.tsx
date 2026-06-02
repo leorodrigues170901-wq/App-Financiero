@@ -78,7 +78,7 @@ export default function DashboardPage() {
           .select('perfil_id, perfis(id, nome_usuario)')
           .eq('familia_id', familiaId);
         
-        profilesData = membersList?.map((m: any, idx: number) => ({
+        profilesData = membersList?.filter((m: any) => m.perfis).map((m: any, idx: number) => ({
           id: m.perfis?.id,
           nome: m.perfis?.nome_usuario || 'Usuário',
           color: memberColors[idx % memberColors.length]
@@ -216,15 +216,18 @@ export default function DashboardPage() {
                     >
                       Casal
                     </button>
-                    {membros.map((membro) => (
-                      <button 
-                        key={membro.id}
-                        onClick={() => setActiveTab(membro.id)}
-                        className={`px-5 py-2 text-sm font-bold rounded-full transition-all flex-1 md:flex-none ${activeTab === membro.id ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-black hover:bg-gray-50'}`}
-                      >
-                        {membro.nome}
-                      </button>
-                    ))}
+                    {membros.map((membro) => {
+                      if (!membro || !membro.id) return null;
+                      return (
+                        <button 
+                          key={`btn-${membro.id}`}
+                          onClick={() => setActiveTab(membro.id)}
+                          className={`px-5 py-2 text-sm font-bold rounded-full transition-all flex-1 md:flex-none ${activeTab === membro.id ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-black hover:bg-gray-50'}`}
+                        >
+                          {membro.nome}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -290,10 +293,11 @@ export default function DashboardPage() {
                   
                   <div className="flex flex-col gap-3 mt-1">
                     {membros.map((membro) => {
+                      if (!membro || !membro.id) return null;
                       const recMembro = dashboardData[membro.id]?.totalRec || 0;
                       const perc = rendaCasal > 0 ? (recMembro / rendaCasal) * 100 : 0;
                       return (
-                        <div key={membro.id} className="flex justify-between items-end">
+                        <div key={`prop-${membro.id}`} className="flex justify-between items-end">
                           <div className="flex items-center gap-2">
                             <span className={`w-2.5 h-2.5 rounded-full ${getBgColorClass(membro.color)}`}></span>
                             <span className="text-sm font-semibold text-gray-700">{membro.nome}</span>
@@ -307,11 +311,12 @@ export default function DashboardPage() {
                     })}
                     
                     <div className="w-full h-1.5 rounded-full bg-gray-100 flex overflow-hidden mt-1">
-                       {membros.map((membro) => {
+                       {membros.map((membro, index) => {
+                         if (!membro || !membro.id) return null;
                          const recMembro = dashboardData[membro.id]?.totalRec || 0;
                          const perc = rendaCasal > 0 ? (recMembro / rendaCasal) * 100 : 0;
                          return (
-                           <div key={`bar-${membro.id}`} className={`${getBgColorClass(membro.color)} h-full transition-all duration-1000`} style={{ width: `${perc}%` }}></div>
+                           <div key={`bar-${membro.id}-${index}`} className={`${getBgColorClass(membro.color)} h-full transition-all duration-1000`} style={{ width: `${perc}%` }}></div>
                          )
                        })}
                     </div>
@@ -380,7 +385,7 @@ export default function DashboardPage() {
                       }
 
                       return (
-                        <div key={idx} className={`flex flex-col gap-4 p-5 rounded-2xl border shadow-sm hover:shadow-md transition-shadow ${cardBgClass}`}>
+                        <div key={`cat-${cat.nome}-${idx}`} className={`flex flex-col gap-4 p-5 rounded-2xl border shadow-sm hover:shadow-md transition-shadow ${cardBgClass}`}>
                           <div className="flex justify-between items-start">
                             {/* Coluna 1: Categoria e Meta */}
                             <div>
@@ -530,7 +535,7 @@ export default function DashboardPage() {
                               const outerLabel = showPercentInside ? nameString : `${nameString} - ${percentString}`;
                               
                               return (
-                                <g key={slice.nome} className="transition-all hover:scale-[1.02] cursor-pointer origin-center">
+                                <g key={`slice-${slice.nome}-${i}`} className="transition-all hover:scale-[1.02] cursor-pointer origin-center">
                                   <path 
                                     d={pathData} 
                                     fill={colorMap[slice.fillCor]} 

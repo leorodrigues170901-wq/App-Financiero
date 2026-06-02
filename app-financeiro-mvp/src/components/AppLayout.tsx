@@ -12,7 +12,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [headerData, setHeaderData] = useState<{
     nomeUsuario: string;
     nomeFamilia: string;
-    participantes: string[];
+    participantes: { id: string, nome: string, cor: string }[];
   } | null>(null);
   const [isLoadingHeader, setIsLoadingHeader] = useState(true);
 
@@ -60,18 +60,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           .eq('familia_id', membro.familia_id)
           .in('status', ['ativo', 'host']);
 
-        let participantesNomes: string[] = [];
+        let participantesNomes: { id: string, nome: string, cor: string }[] = [];
         if (participantesData && participantesData.length > 0) {
           const perfilIds = participantesData.map(p => p.perfil_id);
           const { data: perfisParticipantes } = await supabase
             .from('perfis')
-            .select('nome_usuario, id')
+            .select('id, nome_usuario, cor_perfil')
             .in('id', perfilIds);
 
           if (perfisParticipantes) {
-            participantesNomes = perfisParticipantes.map(p =>
-              p.id === user.id ? 'Você' : (p.nome_usuario || 'Usuário')
-            );
+            participantesNomes = perfisParticipantes.map(p => ({
+              id: p.id,
+              nome: p.id === user.id ? 'Você' : (p.nome_usuario || 'Usuário'),
+              cor: p.cor_perfil || 'slate'
+            }));
           }
         }
 
@@ -101,6 +103,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { name: 'Despesas', href: '/despesas', icon: 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2z' },
     { name: 'Histórico', href: '/historico', icon: 'M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z' },
   ];
+
+  const textColors: Record<string, string> = {
+    blue: "text-blue-600",
+    pink: "text-pink-600",
+    emerald: "text-emerald-600",
+    purple: "text-purple-600",
+    amber: "text-amber-600",
+    teal: "text-teal-600",
+    cyan: "text-cyan-600",
+    indigo: "text-indigo-600",
+    rose: "text-rose-600",
+    orange: "text-orange-600",
+    slate: "text-slate-600",
+  };
 
   return (
     <div className="min-h-screen bg-[#cfddea] flex flex-col md:flex-row">
@@ -156,7 +172,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   Bem-vindo(a) <span className="text-blue-600">{headerData.nomeUsuario}</span>
                 </h2>
                 <p className="text-sm text-gray-600 mt-1 font-medium">
-                  Você está logado na <span className="font-bold text-gray-800">{headerData.nomeFamilia}</span>. Participantes ativos: <span className="font-bold text-gray-800">{headerData.participantes.join(', ')}</span>
+                  Você está logado na <span className="font-bold text-gray-800">{headerData.nomeFamilia}</span>. Participantes ativos:{' '}
+                  {headerData.participantes.map((part, index) => (
+                    <span key={part.id}>
+                      <span className={`font-bold ${textColors[part.cor] || 'text-slate-600'}`}>
+                        {part.nome}
+                      </span>
+                      {index < headerData.participantes.length - 1 && ', '}
+                    </span>
+                  ))}
                 </p>
               </>
             ) : null}
