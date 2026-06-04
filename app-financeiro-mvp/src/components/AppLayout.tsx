@@ -15,6 +15,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     participantes: { id: string, nome: string, cor: string }[];
   } | null>(null);
   const [isLoadingHeader, setIsLoadingHeader] = useState(true);
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
 
   useEffect(() => {
     async function fetchHeaderData() {
@@ -124,23 +125,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="hidden md:block w-20 flex-shrink-0"></div>
 
       {/* Sidebar Desktop (Retrátil) */}
-      <aside className="group fixed hidden md:flex flex-col w-20 hover:w-64 transition-all duration-300 ease-in-out bg-white/80 backdrop-blur-xl border-r border-white/40 shadow-[4px_0_24px_rgba(0,0,0,0.02)] hover:shadow-[4px_0_24px_rgba(0,0,0,0.08)] min-h-screen top-0 left-0 overflow-hidden z-50">
+      <aside 
+        onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
+        className={`fixed hidden md:flex flex-col transition-all duration-300 ease-in-out bg-white/80 backdrop-blur-xl border-r border-white/40 shadow-[4px_0_24px_rgba(0,0,0,0.02)] min-h-screen top-0 left-0 overflow-hidden z-50 ${isSidebarExpanded ? 'w-64 shadow-[4px_0_24px_rgba(0,0,0,0.08)]' : 'w-20 cursor-pointer'}`}
+      >
         <div className="p-6 flex items-center h-20">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-gray-800 to-black text-white flex items-center justify-center font-bold flex-shrink-0 shadow-sm">
             F
           </div>
-          <h1 className="text-xl font-bold font-manrope tracking-tight text-[#0f0f0f] ml-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">Familia Finance</h1>
+          <h1 className={`text-xl font-bold font-manrope tracking-tight text-[#0f0f0f] ml-4 transition-opacity duration-300 whitespace-nowrap ${isSidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>Familia Finance</h1>
         </div>
         <nav className="flex-1 px-3 space-y-2 mt-4">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             return (
               <Link key={item.name} href={item.href}>
-                <div className={`flex items-center p-3 rounded-2xl transition-all ${isActive ? 'bg-black text-white shadow-md' : 'text-gray-600 hover:bg-white/60 hover:text-black'} overflow-hidden`} title={item.name}>
+                <div className={`flex items-center p-3 rounded-2xl transition-all ${isActive ? 'bg-black text-white shadow-md' : 'text-gray-600 hover:bg-black/5 hover:text-black'} overflow-hidden`} title={item.name}>
                   <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon}></path>
                   </svg>
-                  <span className="font-semibold text-sm ml-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">{item.name}</span>
+                  <span className={`font-semibold text-sm ml-4 transition-opacity duration-300 whitespace-nowrap ${isSidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>{item.name}</span>
                 </div>
               </Link>
             );
@@ -150,7 +154,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <button onClick={handleLogout} className="w-full text-left">
             <div className="flex items-center px-1 py-2 text-sm font-semibold text-gray-500 hover:text-black transition-colors" title="Sair">
               <LogOut className="w-6 h-6 flex-shrink-0" />
-              <span className="ml-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">Sair</span>
+              <span className={`ml-4 transition-opacity duration-300 whitespace-nowrap ${isSidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>Sair</span>
             </div>
           </button>
         </div>
@@ -159,7 +163,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-0 relative">
         {/* Dynamic Welcome Header */}
-        <header className="bg-white/80 backdrop-blur-md border-b border-gray-200/50 shadow-sm sticky top-0 z-40 px-6 md:px-10 py-5 flex items-center min-h-[85px]">
+        <header className="bg-white/80 backdrop-blur-md border-b border-gray-200/50 shadow-sm px-6 md:px-10 py-5 flex items-center min-h-[85px]">
           <div className="w-full">
             {isLoadingHeader ? (
               <div className="animate-pulse flex flex-col gap-2">

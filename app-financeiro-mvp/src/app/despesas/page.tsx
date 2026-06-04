@@ -1,11 +1,15 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import AppLayout from '@/components/AppLayout';
 import TransactionModal from '@/components/TransactionModal';
-import { Pencil, Trash2, Plus, Search, ChevronLeft, ChevronRight, Copy, Loader2 } from 'lucide-react';
+import { Pencil, Trash2, Plus, Search, ChevronLeft, ChevronRight, Copy, Loader2, Import, SlidersHorizontal, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { limparDinheiroParaBanco } from '@/lib/formatters';
 import { useMonth } from '@/contexts/MonthContext';
+
+const STATUS_OPCOES = ['Pendente', 'Realizado', 'Pago', 'Direcionado'];
+const AUVP_OPCOES = ['Essencial', 'Investimento', 'Prazer', 'Meta Planejada', 'Oportunidade', 'Conforto', 'Aumentar Renda'];
+const GASTOS_OPCOES = ['Custo Fixo Assumido', 'Custo Recorrente Cancelável', 'Custo Recorrente Planejado', 'Custo Variável'];
 
 const CORES_AUVP: Record<string, string> = {
   'Essencial': 'bg-blue-100 text-blue-700 border-blue-200',
@@ -52,6 +56,7 @@ const getTextStyle = (cor: string) => {
 export default function DespesasPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingDespesa, setEditingDespesa] = useState<any>(null);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   
   // Controle de Mês/Ano via Contexto
   const { currentDate, setCurrentDate } = useMonth();
@@ -62,6 +67,77 @@ export default function DespesasPage() {
   const [userData, setUserData] = useState<{perfilId: string, familiaId: string | null} | null>(null);
   const [membrosAtivos, setMembrosAtivos] = useState<any[]>([]);
   const [isImporting, setIsImporting] = useState(false);
+  
+  const [filtroStatus, setFiltroStatus] = useState<string[]>([]);
+  const [filtroAUVP, setFiltroAUVP] = useState<string[]>([]);
+  const [filtroGastos, setFiltroGastos] = useState<string[]>([]);
+  const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if ((event.target as Element).closest(".user-filter-btn")) return;
+      if (filterMenuRef.current && !filterMenuRef.current.contains(event.target as Node)) {
+        setIsFilterMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  const bgColors: Record<string, string> = {
+    blue: "bg-blue-100 text-blue-700",
+    pink: "bg-pink-100 text-pink-700",
+    emerald: "bg-emerald-100 text-emerald-700",
+    purple: "bg-purple-100 text-purple-700",
+    amber: "bg-amber-100 text-amber-700",
+    teal: "bg-teal-100 text-teal-700",
+    cyan: "bg-cyan-100 text-cyan-700",
+    indigo: "bg-indigo-100 text-indigo-700",
+    rose: "bg-rose-100 text-rose-700",
+    orange: "bg-orange-100 text-orange-700",
+    slate: "bg-slate-100 text-slate-700",
+  };
+
+  const bgHoverColors: Record<string, string> = {
+    blue: "hover:bg-blue-100 hover:text-blue-700",
+    pink: "hover:bg-pink-100 hover:text-pink-700",
+    emerald: "hover:bg-emerald-100 hover:text-emerald-700",
+    purple: "hover:bg-purple-100 hover:text-purple-700",
+    amber: "hover:bg-amber-100 hover:text-amber-700",
+    teal: "hover:bg-teal-100 hover:text-teal-700",
+    cyan: "hover:bg-cyan-100 hover:text-cyan-700",
+    indigo: "hover:bg-indigo-100 hover:text-indigo-700",
+    rose: "hover:bg-rose-100 hover:text-rose-700",
+    orange: "hover:bg-orange-100 hover:text-orange-700",
+    slate: "hover:bg-slate-100 hover:text-slate-700",
+  };
+
+  const ringColors: Record<string, string> = {
+    blue: "ring-blue-500",
+    pink: "ring-pink-500",
+    emerald: "ring-emerald-500",
+    purple: "ring-purple-500",
+    amber: "ring-amber-500",
+    teal: "ring-teal-500",
+    cyan: "ring-cyan-500",
+    indigo: "ring-indigo-500",
+    rose: "ring-rose-500",
+    orange: "ring-orange-500",
+    slate: "ring-slate-500",
+  };
+
+  const toggleFiltro = (tipo: 'status' | 'auvp' | 'gastos', valor: string) => {
+    if (tipo === 'status') {
+      setFiltroStatus(prev => prev.includes(valor) ? prev.filter(v => v !== valor) : [...prev, valor]);
+    } else if (tipo === 'auvp') {
+      setFiltroAUVP(prev => prev.includes(valor) ? prev.filter(v => v !== valor) : [...prev, valor]);
+    } else if (tipo === 'gastos') {
+      setFiltroGastos(prev => prev.includes(valor) ? prev.filter(v => v !== valor) : [...prev, valor]);
+    }
+  };
 
   const fetchDespesas = async () => {
     setLoading(true);
@@ -89,6 +165,7 @@ export default function DespesasPage() {
         descricao: item.descricao,
         responsaveis_divisao: item.responsaveis_divisao || [],
         classificacao_auvp: item.classificacao_auvp || item.auvp || 'Essencial',
+        categoria_gastos: item.categoria_gastos || item.categoria || 'Variável',
         valor: Number(item.valor),
         status: item.status || 'Pendente',
         parcelado: item.parcelado || item.is_parcelado || false,
@@ -160,21 +237,40 @@ export default function DespesasPage() {
 
 
   // Lógica de Filtragem
+  const qtdFiltrosAtivos = filtroStatus.length + filtroAUVP.length + filtroGastos.length;
+
   const filteredDespesas = despesas.filter(d => {
-    if (filtroUsuarios.length === 0) return true;
+    let passUsuario = true;
+    if (filtroUsuarios.length > 0) {
+      const idsDaDespesa = d.responsaveis_divisao?.map((r: any) => r.id) || [];
+      passUsuario = filtroUsuarios.some(id => idsDaDespesa.includes(id));
+    }
     
-    const idsDaDespesa = d.responsaveis_divisao?.map((r: any) => r.id) || [];
-    
-    if (idsDaDespesa.length !== filtroUsuarios.length) return false;
-    
-    const todosInclusos = filtroUsuarios.every(id => idsDaDespesa.includes(id));
-    return todosInclusos;
+    const passStatus = filtroStatus.length === 0 || filtroStatus.includes(d.status);
+    const passAUVP = filtroAUVP.length === 0 || filtroAUVP.includes(d.classificacao_auvp);
+    const passGastos = filtroGastos.length === 0 || filtroGastos.includes(d.categoria_gastos);
+
+    return passUsuario && passStatus && passAUVP && passGastos;
   });
 
+  // Função auxiliar para obter o valor real (fatiado ou integral)
+  const getValorConsiderado = (despesa: any) => {
+    if (filtroUsuarios.length === 0) return despesa.valor;
+    
+    const responsaveis = despesa.responsaveis_divisao || [];
+    const fatiasFiltradas = responsaveis.filter((r: any) => filtroUsuarios.includes(r.id));
+    
+    if (fatiasFiltradas.length > 0) {
+      return fatiasFiltradas.reduce((sum: number, r: any) => sum + Number(r.valor || 0), 0);
+    }
+    
+    return despesa.valor;
+  };
+
   // Cálculos Dinâmicos
-  const totalPrevisto = filteredDespesas.reduce((acc, curr) => acc + curr.valor, 0);
-  const jaPago = filteredDespesas.filter(d => d.status === 'Pago').reduce((acc, curr) => acc + curr.valor, 0);
-  const faltaPagar = filteredDespesas.filter(d => d.status !== 'Pago').reduce((acc, curr) => acc + curr.valor, 0);
+  const totalPrevisto = filteredDespesas.reduce((acc, curr) => acc + getValorConsiderado(curr), 0);
+  const jaPago = filteredDespesas.filter(d => d.status === 'Pago').reduce((acc, curr) => acc + getValorConsiderado(curr), 0);
+  const faltaPagar = filteredDespesas.filter(d => d.status !== 'Pago').reduce((acc, curr) => acc + getValorConsiderado(curr), 0);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -199,6 +295,18 @@ export default function DespesasPage() {
     }
   };
 
+  const updateStatusInline = async (id: string, novoStatus: string) => {
+    setDespesas(prev => prev.map(d => d.id === id ? { ...d, status: novoStatus } : d));
+    const { error } = await supabase
+      .from("despesas")
+      .update({ status: novoStatus })
+      .eq("id", id);
+      
+    if (error) {
+      console.error("Erro ao atualizar status:", error);
+    }
+  };
+
   const handleOpenCreate = () => {
     setEditingDespesa(null);
     setIsModalOpen(true);
@@ -209,18 +317,28 @@ export default function DespesasPage() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id: any) => {
+  const handleDeleteClick = (id: string) => {
+    setItemToDelete(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!itemToDelete) return;
     const { error } = await supabase
       .from('despesas')
       .delete()
-      .eq('id', id);
+      .eq('id', itemToDelete);
 
     if (error) {
       console.error('Erro ao deletar despesa:', error);
       return;
     }
 
-    setDespesas(despesas.filter(d => d.id !== id));
+    setDespesas(despesas.filter(d => d.id !== itemToDelete));
+    setItemToDelete(null);
+  };
+
+  const cancelDelete = () => {
+    setItemToDelete(null);
   };
 
   const handleSaveModal = async (data: any) => {
@@ -229,7 +347,7 @@ export default function DespesasPage() {
       return;
     }
 
-    const safeValor = limparDinheiroParaBanco(data.valor);
+    const safeValor = Number(String(data.valor).replace(/\./g, "").replace(",", "."));
     
     const dbData: any = {
       descricao: data.descricao,
@@ -297,7 +415,6 @@ export default function DespesasPage() {
 
       if (error) {
         console.error('Erro ao buscar despesas do mês anterior:', error);
-        alert('Erro ao buscar despesas do mês anterior.');
         return;
       }
 
@@ -310,7 +427,6 @@ export default function DespesasPage() {
       }) || [];
 
       if (despesasFiltradas.length === 0) {
-        alert("Não há despesas fixas ou parcelas ativas no mês anterior para importar.");
         return;
       }
 
@@ -330,16 +446,13 @@ export default function DespesasPage() {
 
       if (insertError) {
         console.error('Erro ao importar despesas:', insertError);
-        alert('Erro ao importar despesas.');
         return;
       }
 
-      alert('Despesas importadas com sucesso!');
       fetchDespesas();
 
     } catch (err) {
       console.error('Erro inesperado na importação:', err);
-      alert('Ocorreu um erro inesperado ao importar.');
     } finally {
       setIsImporting(false);
     }
@@ -350,7 +463,7 @@ export default function DespesasPage() {
       <div className="relative font-sans text-[#0f0f0f] pb-24">
         
         {/* Cabeçalho de Controle */}
-        <div className="sticky top-0 z-30 bg-white/70 backdrop-blur-md border-b border-gray-200 pt-5 pb-4 mb-8 shadow-sm">
+        <div className="bg-white dark:bg-zinc-950 sticky top-0 z-40 border-b border-gray-200 pt-5 pb-4 mb-8 shadow-sm">
           <div className="mx-auto max-w-[1400px] px-6">
             
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -362,7 +475,7 @@ export default function DespesasPage() {
                   <button onClick={handlePrevMonth} className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-full transition-colors active:scale-95">
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                  <span className="text-sm font-bold text-gray-800 px-3 min-w-[130px] text-center capitalize select-none tracking-wide">
+                  <span className="text-sm font-bold text-gray-800 px-3 min-w-[160px] inline-flex justify-center text-center capitalize select-none tracking-wide">
                     {displayMonth}
                   </span>
                   <button onClick={handleNextMonth} className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-full transition-colors active:scale-95">
@@ -382,14 +495,111 @@ export default function DespesasPage() {
                     className="w-full bg-white border border-gray-200 text-sm rounded-full pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-black transition-colors"
                   />
                 </div>
-                <button 
-                  onClick={handleImportarMesAnterior}
-                  disabled={isImporting}
-                  className="inline-flex items-center justify-center gap-2 transition-all hover:scale-105 hover:shadow-md font-medium text-white bg-zinc-800 hover:bg-zinc-700 disabled:opacity-70 disabled:hover:scale-100 rounded-full px-5 py-2 text-sm whitespace-nowrap shrink-0"
-                >
-                  {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
-                  {isImporting ? 'Importando...' : 'Importar do Mês Anterior'}
-                </button>
+
+                {qtdFiltrosAtivos > 0 && (
+                  <button 
+                    onClick={() => {
+                      setFiltroStatus([]);
+                      setFiltroAUVP([]);
+                      setFiltroGastos([]);
+                    }}
+                    className="text-sm text-red-500 hover:text-red-700 font-semibold cursor-pointer flex items-center gap-1 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                    <span className="hidden sm:inline">Limpar</span>
+                  </button>
+                )}
+                <div className="relative" ref={filterMenuRef}>
+                  <button 
+                    onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)}
+                    className={`relative inline-flex items-center justify-center gap-2 transition-all hover:shadow-md font-medium rounded-full px-4 py-2 text-sm whitespace-nowrap shrink-0 border ${isFilterMenuOpen || qtdFiltrosAtivos > 0 ? 'bg-zinc-100 border-zinc-300 text-zinc-900' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    <SlidersHorizontal className="w-4 h-4" />
+                    <span className="hidden sm:inline">Filtros</span>
+                    {qtdFiltrosAtivos > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white">
+                        {qtdFiltrosAtivos}
+                      </span>
+                    )}
+                  </button>
+                  
+                  {isFilterMenuOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-[320px] sm:w-[360px] bg-zinc-900 text-zinc-100 rounded-2xl shadow-xl border border-zinc-800 z-50 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-200">
+                      <div className="p-4 border-b border-zinc-800 flex justify-between items-center">
+                        <h3 className="font-semibold text-sm">Filtros Avançados</h3>
+                        <button onClick={() => setIsFilterMenuOpen(false)} className="text-zinc-400 hover:text-white p-1 rounded-md transition-colors">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      
+                      <div className="p-4 space-y-6 max-h-[60vh] overflow-y-auto no-scrollbar">
+                        <div className="space-y-3">
+                          <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Status</h4>
+                          <div className="space-y-2">
+                            {STATUS_OPCOES.map(opcao => (
+                              <label key={opcao} className="flex items-center gap-3 cursor-pointer group">
+                                <input 
+                                  type="checkbox" 
+                                  className="w-4 h-4 rounded border-zinc-600 text-blue-500 focus:ring-blue-500 bg-zinc-800 accent-blue-500"
+                                  checked={filtroStatus.includes(opcao)}
+                                  onChange={() => toggleFiltro('status', opcao)}
+                                />
+                                <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">{opcao}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Classificação AUVP</h4>
+                          <div className="space-y-2">
+                            {AUVP_OPCOES.map(opcao => (
+                              <label key={opcao} className="flex items-center gap-3 cursor-pointer group">
+                                <input 
+                                  type="checkbox" 
+                                  className="w-4 h-4 rounded border-zinc-600 text-blue-500 focus:ring-blue-500 bg-zinc-800 accent-blue-500"
+                                  checked={filtroAUVP.includes(opcao)}
+                                  onChange={() => toggleFiltro('auvp', opcao)}
+                                />
+                                <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">{opcao}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Categoria de Gastos</h4>
+                          <div className="space-y-2">
+                            {GASTOS_OPCOES.map(opcao => (
+                              <label key={opcao} className="flex items-center gap-3 cursor-pointer group">
+                                <input 
+                                  type="checkbox" 
+                                  className="w-4 h-4 rounded border-zinc-600 text-blue-500 focus:ring-blue-500 bg-zinc-800 accent-blue-500"
+                                  checked={filtroGastos.includes(opcao)}
+                                  onChange={() => toggleFiltro('gastos', opcao)}
+                                />
+                                <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">{opcao}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-3 border-t border-zinc-800 bg-zinc-950">
+                        <button 
+                          onClick={() => {
+                            setFiltroStatus([]);
+                            setFiltroAUVP([]);
+                            setFiltroGastos([]);
+                          }}
+                          className="w-full py-2 text-sm font-medium text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                        >
+                          Limpar Filtros
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <button 
                   onClick={handleOpenCreate}
                   className="inline-flex items-center justify-center gap-2 transition-all hover:scale-105 hover:shadow-md font-medium text-white bg-black rounded-full px-5 py-2 text-sm whitespace-nowrap shrink-0"
@@ -400,12 +610,12 @@ export default function DespesasPage() {
               </div>
             </div>
 
-            <div className="mt-5 flex gap-2 overflow-x-auto no-scrollbar pb-1">
+            <div className="mt-5 flex gap-2 overflow-x-auto no-scrollbar p-1">
               <button
                 onClick={() => setFiltroUsuarios([])}
-                className={`px-4 py-1.5 text-[11px] font-bold rounded-full transition-all uppercase tracking-wider whitespace-nowrap ${
+                className={`user-filter-btn px-4 py-1.5 text-[11px] font-bold rounded-full transition-all uppercase tracking-wider whitespace-nowrap ${
                   filtroUsuarios.length === 0 
-                    ? 'bg-zinc-800 text-white shadow-md' 
+                    ? 'bg-zinc-900 text-white shadow-md' 
                     : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-black'
                 }`}
               >
@@ -413,8 +623,7 @@ export default function DespesasPage() {
               </button>
               {membrosAtivos.map(membro => {
                 const isActive = filtroUsuarios.includes(membro.id);
-                const activeColor = getAvatarColor(membro.cor_perfil) + ' text-white border-transparent shadow-md';
-                const inactiveColor = 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-black';
+                const cor = membro.cor_perfil || 'slate';
                 return (
                   <button
                     key={membro.id}
@@ -425,8 +634,7 @@ export default function DespesasPage() {
                         setFiltroUsuarios(prev => [...prev, membro.id]);
                       }
                     }}
-                    className={`px-4 py-1.5 text-[11px] font-bold rounded-full transition-all uppercase tracking-wider whitespace-nowrap ${isActive ? activeColor : inactiveColor}`}
-                    style={membro.cor_perfil?.startsWith('#') && isActive ? { backgroundColor: membro.cor_perfil, color: '#fff', borderColor: 'transparent' } : {}}
+                    className={`user-filter-btn px-4 py-1.5 text-[11px] font-bold rounded-full transition-all uppercase tracking-wider whitespace-nowrap border ${isActive ? `${bgColors[cor] || bgColors.slate} border-transparent shadow-sm ring-2 ring-offset-1 ${ringColors[cor] || 'ring-slate-500'}` : `bg-white border-gray-200 text-gray-500 ${bgHoverColors[cor] || 'hover:bg-slate-100 hover:text-slate-700'}`}`}
                   >
                     {membro.nome_usuario}
                   </button>
@@ -503,9 +711,21 @@ export default function DespesasPage() {
                             <Search className="w-8 h-8 text-gray-400" />
                           </div>
                           <h3 className="text-lg font-bold text-gray-900 font-manrope mb-2">Nenhum lançamento encontrado</h3>
-                          <p className="text-sm text-gray-500">
+                          <p className="text-sm text-gray-500 mb-6">
                             Não há registros de despesas para este mês. Adicione seu primeiro lançamento!
                           </p>
+                          <button 
+                            onClick={handleImportarMesAnterior}
+                            disabled={isImporting}
+                            className="inline-flex items-center gap-2 px-6 py-2.5 bg-white border border-gray-200 text-gray-800 font-semibold rounded-full hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50"
+                          >
+                            {isImporting ? (
+                              <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                            ) : (
+                              <Import className="w-4 h-4" />
+                            )}
+                            Importar despesas do mês anterior
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -570,13 +790,21 @@ export default function DespesasPage() {
                           )}
                         </td>
                         <td className="py-4 px-4 text-center">
-                          <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider ${getStatusColor(item.status)}`}>
+                          <div className={`relative inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider cursor-pointer ${getStatusColor(item.status)}`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${getStatusDot(item.status)}`}></span>
+                            <select 
+                              value={item.status}
+                              onChange={(e) => updateStatusInline(item.id, e.target.value)}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            >
+                              <option value="Pendente">Pendente</option>
+                              <option value="Realizado">Realizado</option>
+                            </select>
                             {item.status}
                           </div>
                         </td>
                         <td className="py-4 px-4 text-center">
-                          <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                          <div className="flex items-center justify-center gap-2 transition-opacity">
                             <button 
                               onClick={() => handleEdit(item)}
                               className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -585,7 +813,7 @@ export default function DespesasPage() {
                               <Pencil className="w-4 h-4" />
                             </button>
                             <button 
-                              onClick={() => handleDelete(item.id)}
+                              onClick={() => handleDeleteClick(item.id)}
                               className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                               title="Excluir"
                             >
@@ -608,6 +836,38 @@ export default function DespesasPage() {
           initialData={editingDespesa}
           onSave={handleSaveModal}
         />
+
+        {itemToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div 
+              className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"
+              onClick={cancelDelete}
+            ></div>
+            <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden p-6 text-center animate-slide-up">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                <Trash2 className="h-6 w-6 text-red-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Excluir Despesa?</h3>
+              <p className="text-sm text-gray-500 mb-6">
+                Tem certeza de que deseja excluir permanentemente esta despesa? Esta ação não poderá ser desfeita.
+              </p>
+              <div className="flex gap-3 justify-center">
+                <button 
+                  onClick={cancelDelete}
+                  className="px-4 py-2 font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors w-full"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmDelete}
+                  className="px-4 py-2 font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-md transition-all active:scale-95 w-full"
+                >
+                  Excluir
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <style dangerouslySetInnerHTML={{__html: `
           .no-scrollbar::-webkit-scrollbar {

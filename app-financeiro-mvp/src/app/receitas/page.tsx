@@ -10,6 +10,7 @@ import { useMonth } from '@/contexts/MonthContext';
 export default function ReceitasPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingReceita, setEditingReceita] = useState<any>(null);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   
   // Controle de Mês/Ano
   const { currentDate, setCurrentDate } = useMonth();
@@ -152,20 +153,59 @@ export default function ReceitasPage() {
   const handleImportPreviousMonth = async () => {
     if (!userData) return;
     setIsImporting(true);
-    const ano = currentDate.getFullYear();
-    const mes = currentDate.getMonth() + 1;
     
-    const { error } = await supabase.rpc('clonar_receitas_mes_anterior', {
-        ano_destino: ano,
-        mes_destino: mes,
-        f_id: userData.familiaId
-    });
-    
-    setIsImporting(false);
-    if (error) {
-        console.error('Erro ao importar receitas:', error);
-    } else {
+    try {
+      const prevMonthDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+      const startOfPrevMonth = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), 1).toISOString();
+      const endOfPrevMonth = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth() + 1, 0, 23, 59, 59).toISOString();
+
+      let query = supabase
+        .from('receitas')
+        .select('*')
+        .gte('data', startOfPrevMonth)
+        .lte('data', endOfPrevMonth);
+
+      if (userData.familiaId) {
+        query = query.eq('familia_id', userData.familiaId);
+      } else {
+        query = query.eq('perfil_id', userData.perfilId);
+      }
+
+      const { data: receitasAnteriores, error: fetchError } = await query;
+
+      if (fetchError) {
+        console.error('Erro ao buscar receitas do mês anterior:', fetchError);
+        setIsImporting(false);
+        return;
+      }
+
+      if (!receitasAnteriores || receitasAnteriores.length === 0) {
+        setIsImporting(false);
+        return;
+      }
+
+      const primeiroDiaDoMesAtualFormatado = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+
+      const novasReceitas = receitasAnteriores.map(receita => {
+        const { id, created_at, updated_at, ...rest } = receita;
+        return {
+          ...rest,
+          data: primeiroDiaDoMesAtualFormatado, // data do mês selecionado na UI
+          status: 'Pendente' // Regra de negócio: Toda importação nasce como pendente
+        };
+      });
+
+      const { error: insertError } = await supabase.from('receitas').insert(novasReceitas);
+
+      if (insertError) {
+        console.error("Erro ao importar receitas:", insertError?.message || insertError);
+      } else {
         fetchReceitas();
+      }
+    } catch (error: any) {
+      console.error("Erro ao importar receitas:", error?.message || error);
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -208,6 +248,18 @@ export default function ReceitasPage() {
         return 'bg-amber-500';
       default:
         return 'bg-gray-400';
+    }
+  };
+
+  const updateStatusInline = async (id: string, novoStatus: string) => {
+    setReceitas(prev => prev.map(r => r.id === id ? { ...r, status: novoStatus } : r));
+    const { error } = await supabase
+      .from("receitas")
+      .update({ status: novoStatus })
+      .eq("id", id);
+      
+    if (error) {
+      console.error("Erro ao atualizar status:", error);
     }
   };
 
@@ -275,18 +327,28 @@ export default function ReceitasPage() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id: any) => {
+  const handleDeleteClick = (id: string) => {
+    setItemToDelete(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!itemToDelete) return;
     const { error } = await supabase
       .from('receitas')
       .delete()
-      .eq('id', id);
+      .eq('id', itemToDelete);
 
     if (error) {
       console.error('Erro ao deletar receita:', error);
       return;
     }
 
-    setReceitas(receitas.filter(r => r.id !== id));
+    setReceitas(receitas.filter(r => r.id !== itemToDelete));
+    setItemToDelete(null);
+  };
+
+  const cancelDelete = () => {
+    setItemToDelete(null);
   };
 
   const handleSaveModal = async (data: any) => {
@@ -296,7 +358,7 @@ export default function ReceitasPage() {
     }
 
     // Limpeza Segura do valor monetário
-    const safeValor = limparDinheiroParaBanco(data.valor);
+    const safeValor = Number(String(data.valor).replace(/\./g, "").replace(",", "."));
     
     const dbData: any = {
       descricao: data.descricao,
@@ -341,7 +403,7 @@ export default function ReceitasPage() {
       <div className="relative font-sans text-[#0f0f0f] pb-24">
         
         {/* Cabeçalho de Controle */}
-        <div className="sticky top-0 z-30 bg-white/70 backdrop-blur-md border-b border-gray-200 pt-5 pb-4 mb-8 shadow-sm">
+        <div className="bg-white dark:bg-zinc-950 sticky top-0 z-40 border-b border-gray-200 pt-5 pb-4 mb-8 shadow-sm">
           <div className="mx-auto max-w-[1400px] px-6">
             
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -353,7 +415,7 @@ export default function ReceitasPage() {
                   <button onClick={handlePrevMonth} className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-full transition-colors active:scale-95">
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                  <span className="text-sm font-bold text-gray-800 px-3 min-w-[130px] text-center capitalize select-none tracking-wide">
+                  <span className="text-sm font-bold text-gray-800 px-3 min-w-[160px] inline-flex justify-center text-center capitalize select-none tracking-wide">
                     {displayMonth}
                   </span>
                   <button onClick={handleNextMonth} className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-full transition-colors active:scale-95">
@@ -384,7 +446,7 @@ export default function ReceitasPage() {
             </div>
 
             {membrosAtivos.length > 1 && (
-              <div className="mt-5 flex gap-2 overflow-x-auto no-scrollbar pb-1">
+              <div className="mt-5 flex gap-2 overflow-x-auto no-scrollbar p-1">
                 <button
                   onClick={() => toggleFiltroResponsavel('Todos')}
                   className={`px-4 py-1.5 text-[11px] font-bold rounded-full transition-all uppercase tracking-wider whitespace-nowrap ${
@@ -513,13 +575,21 @@ export default function ReceitasPage() {
                           </div>
                         </td>
                         <td className="py-4 px-4 text-center">
-                          <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider ${getStatusColor(item.status)}`}>
+                          <div className={`relative inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider cursor-pointer ${getStatusColor(item.status)}`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${getStatusDot(item.status)}`}></span>
+                            <select 
+                              value={item.status}
+                              onChange={(e) => updateStatusInline(item.id, e.target.value)}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            >
+                              <option value="Pendente">Pendente</option>
+                              <option value="Recebido">Recebido</option>
+                            </select>
                             {item.status}
                           </div>
                         </td>
                         <td className="py-4 px-4 text-center">
-                          <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                          <div className="flex items-center justify-center gap-2 transition-opacity">
                             <button 
                               onClick={() => handleEdit(item)}
                               className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -528,7 +598,7 @@ export default function ReceitasPage() {
                               <Pencil className="w-4 h-4" />
                             </button>
                             <button 
-                              onClick={() => handleDelete(item.id)}
+                              onClick={() => handleDeleteClick(item.id)}
                               className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                               title="Excluir"
                             >

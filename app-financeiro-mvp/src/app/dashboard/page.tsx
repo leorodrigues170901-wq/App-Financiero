@@ -7,20 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useMonth } from '@/contexts/MonthContext';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-// Utilitário de Data
-const mesesDict: Record<string, number> = {
-  'Janeiro': 0, 'Fevereiro': 1, 'Março': 2, 'Abril': 3, 'Maio': 4, 'Junho': 5,
-  'Julho': 6, 'Agosto': 7, 'Setembro': 8, 'Outubro': 9, 'Novembro': 10, 'Dezembro': 11
-};
 
-const getMonthRange = (monthStr: string) => {
-  const [mes, anoStr] = monthStr.split(' ');
-  const monthIndex = mesesDict[mes] ?? 5; // Fallback to Junho if not found
-  const year = parseInt(anoStr, 10) || 2026;
-  const startOfMonth = new Date(year, monthIndex, 1).toISOString();
-  const endOfMonth = new Date(year, monthIndex + 1, 0, 23, 59, 59).toISOString();
-  return { startOfMonth, endOfMonth };
-};
 
 // Categorias Base
 const categoriasBase = [
@@ -47,7 +34,15 @@ const memberColors = ['blue', 'pink', 'green', 'yellow', 'purple', 'indigo'];
 
 export default function DashboardPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { currentDate, handlePrevMonth, handleNextMonth } = useMonth();
+  const { currentDate, setCurrentDate } = useMonth();
+
+  const handlePrevMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
+  };
+
+  const handleNextMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
+  };
   const [activeTab, setActiveTab] = useState('casal'); // 'casal' ou perfil_id
   
   const formattedMonth = currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
@@ -185,7 +180,7 @@ export default function DashboardPage() {
     <AppLayout>
       <div className="relative font-sans text-[#0f0f0f]">
         {/* Top Header */}
-        <div className="sticky top-0 z-30 bg-white/70 backdrop-blur-md border-b border-gray-200 py-4 mb-8 shadow-sm">
+        <div className="bg-white dark:bg-zinc-950 sticky top-0 z-40 border-b border-gray-200 py-4 mb-8 shadow-sm">
           <div className="mx-auto max-w-[1400px] px-6">
             
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -197,7 +192,7 @@ export default function DashboardPage() {
                   <button onClick={handlePrevMonth} className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-full transition-colors active:scale-95">
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                  <span className="text-sm font-bold text-gray-800 px-3 min-w-[130px] text-center capitalize select-none tracking-wide">
+                  <span className="text-sm font-bold text-gray-800 px-3 min-w-[160px] inline-flex justify-center text-center capitalize select-none tracking-wide">
                     {displayMonth}
                   </span>
                   <button onClick={handleNextMonth} className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-full transition-colors active:scale-95">

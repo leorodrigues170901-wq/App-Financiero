@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
-import { formatarVisualmente, converterBancoParaInput } from '@/lib/formatters';
+import { formatarVisualmente, converterBancoParaInput, limparDinheiroParaBanco } from '@/lib/formatters';
 import { supabase } from '@/lib/supabase';
 import { useMonth } from '@/contexts/MonthContext';
 
@@ -156,19 +156,61 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
     }
   }, [isOpen, currentDate, membrosDisponiveis, type, initialData]);
 
-  useEffect(() => {
-    if (initialData) {
-      // Refatoração baseada no perfil_id (fk real da tabela)
-      const oldRespName = initialData.perfil_id || initialData.responsavel || initialData.resp;
-      let foundId = oldRespName; // default (pode ser UUID se já migrado)
-      let foundName = oldRespName;
+  const resetFormStates = () => {
+    setFormData(prev => ({
+      ...prev,
+      descricao: '',
+      valor: '',
+      status: type === 'receita' ? 'Recebido' : 'Pendente',
+      tipoDivisao: 'Igualitária',
+      auvp: 'Essencial',
+      categoria: type === 'receita' ? '' : 'Custo Fixo Assumido',
+      formaPagamento: 'Pix',
+      isParcelado: false,
+      parcelaAtual: 1,
+      totalParcelas: 12
+    }));
+    setPercentuaisPersonalizados({});
+    setErrorMsg(null);
+  };
 
-      // Tenta achar na lista de membros se não for Todos
-      if (oldRespName !== 'Todos' && oldRespName !== 'Casal' && membrosDisponiveis.length > 0) {
-        const member = membrosDisponiveis.find(m => m.id === oldRespName || m.nome_usuario === oldRespName);
+  const handleClose = () => {
+    resetFormStates();
+    onClose();
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      resetFormStates();
+      return;
+    }
+
+    if (initialData) {
+      let respId = initialData.perfil_id || initialData.responsavel || initialData.resp || 'Todos';
+      let respNome = initialData.respNome || 'Todos';
+      let tipoDivisao = initialData.tipoDivisao || initialData.tipo_divisao || 'Igualitária';
+      let newPercentuais: Record<string, number> = {};
+
+      if (respId === 'Casal') respId = 'Todos';
+
+      if (!isReceita && initialData.responsaveis_divisao && Array.isArray(initialData.responsaveis_divisao)) {
+        if (initialData.responsaveis_divisao.length === 1) {
+          respId = initialData.responsaveis_divisao[0].id;
+        } else if (initialData.responsaveis_divisao.length > 1) {
+          respId = 'Todos';
+          if (tipoDivisao === 'Personalizada') {
+             initialData.responsaveis_divisao.forEach((div: any) => {
+               newPercentuais[div.id] = div.percentual || 0;
+             });
+          }
+        }
+      }
+
+      if (respId !== 'Todos' && membrosDisponiveis.length > 0) {
+        const member = membrosDisponiveis.find(m => m.id === respId || m.nome_usuario === respId);
         if (member) {
-          foundId = member.id;
-          foundName = member.nome_usuario;
+          respId = member.id;
+          respNome = member.nome_usuario;
         }
       }
 
@@ -176,32 +218,19 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
         descricao: initialData.descricao || '',
         valor: initialData.valor !== undefined ? converterBancoParaInput(initialData.valor) : '',
         status: initialData.status || (type === 'receita' ? 'Recebido' : 'Pendente'),
-        resp: (foundId === 'Casal' ? 'Todos' : foundId) || (type === 'receita' ? '' : 'Todos'),
-        respNome: (foundName === 'Casal' ? 'Todos' : foundName) || (type === 'receita' ? '' : 'Todos'),
-        tipoDivisao: initialData.tipoDivisao || initialData.tipo_divisao || 'Igualitária',
-        auvp: initialData.auvp || 'Essencial',
-        categoria: initialData.categoria || (type === 'receita' ? 'Entrada' : 'Custo Fixo Assumido'),
-        formaPagamento: initialData.formaPagamento || initialData.forma_pagamento || 'Pix',
+        resp: respId,
+        respNome: respNome,
+        tipoDivisao: tipoDivisao,
+        auvp: initialData.classificacao_auvp || initialData.auvp || 'Essencial',
+        categoria: initialData.categoria_gastos || initialData.categoria || (type === 'receita' ? 'Entrada' : 'Custo Fixo Assumido'),
+        formaPagamento: initialData.forma_pagamento || initialData.formaPagamento || 'Pix',
         isParcelado: initialData.parcelado || initialData.isParcelado || initialData.is_parcelado || false,
         parcelaAtual: initialData.parcela_atual || initialData.parcelaAtual || 1,
         totalParcelas: initialData.total_parcelas || initialData.totalParcelas || 1
       });
+      setPercentuaisPersonalizados(newPercentuais);
     } else {
-      // Já inicializamos no state e no fetchMembros, aqui só reset do valor
-      setFormData(prev => ({
-        ...prev,
-        descricao: '',
-        valor: '',
-        status: type === 'receita' ? 'Recebido' : 'Pendente',
-        // resp/respNome são setados no fetchMembros
-        tipoDivisao: 'Igualitária',
-        auvp: 'Essencial',
-        categoria: type === 'receita' ? '' : 'Custo Fixo Assumido',
-        formaPagamento: 'Pix',
-        isParcelado: false,
-        parcelaAtual: 1,
-        totalParcelas: 12
-      }));
+      resetFormStates();
     }
   }, [initialData, isOpen, type, membrosDisponiveis]);
 
@@ -307,8 +336,8 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
 
   const handleSaveClick = () => {
     setErrorMsg(null);
-    const rawValue = formData.valor.replace(/\D/g, '');
-    const valorNumerico = Number(rawValue) / 100;
+    const valorString = String(formData.valor);
+    const valorNumerico = Number(valorString.replace(/\./g, "").replace(",", "."));
     
     const formatCurrency = (val: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
@@ -379,10 +408,10 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
       };
 
       if (onSave) onSave(payloadDespesa);
-      onClose();
+      handleClose();
     } else {
       if (onSave) onSave({...formData});
-      onClose();
+      handleClose();
     }
   };
 
@@ -390,7 +419,7 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div 
         className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
+        onClick={handleClose}
       ></div>
       
       <div className="relative w-full max-w-lg bg-white border border-gray-200 rounded-3xl shadow-2xl overflow-hidden animate-slide-up flex flex-col max-h-[90vh]">
@@ -398,7 +427,7 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
         <div className="flex justify-between items-center p-6 border-b border-gray-100">
           <h3 className="text-lg font-bold text-gray-900">{title}</h3>
           <button 
-            onClick={onClose}
+            onClick={handleClose}
             className="text-gray-400 hover:text-black transition-colors p-1 rounded-full hover:bg-gray-100"
           >
             <X className="w-5 h-5" />
@@ -430,8 +459,21 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Valor (R$)</label>
               <input 
                 type="text" 
-                value={formatarVisualmente(formData.valor)}
-                onChange={(e) => setFormData({...formData, valor: e.target.value.replace(/\D/g, '')})}
+                value={formData.valor}
+                onChange={(e) => {
+                  let val = e.target.value;
+                  val = val.replace(/[^\d,.]/g, '');
+                  val = val.replace('.', ',');
+                  const parts = val.split(',');
+                  if (parts.length > 2) val = parts[0] + ',' + parts.slice(1).join('');
+                  let [integerPart, decimalPart] = val.split(',');
+                  if (integerPart) {
+                    integerPart = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+                  }
+                  if (decimalPart !== undefined) decimalPart = decimalPart.substring(0, 2);
+                  const finalString = decimalPart !== undefined ? integerPart + ',' + decimalPart : integerPart;
+                  setFormData({...formData, valor: finalString});
+                }}
                 placeholder="0,00" 
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all font-mono"
               />
@@ -504,6 +546,7 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
                           type="number"
                           value={percentuaisPersonalizados[m.id] || ''}
                           onChange={(e) => setPercentuaisPersonalizados({...percentuaisPersonalizados, [m.id]: Number(e.target.value)})}
+                          onFocus={(e) => e.target.select()}
                           placeholder="0"
                           className="w-16 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-black transition-all font-mono"
                         />
@@ -582,6 +625,7 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
                       type="number" 
                       value={formData.parcelaAtual}
                       onChange={(e) => setFormData({...formData, parcelaAtual: parseInt(e.target.value) || 1})}
+                      onFocus={(e) => e.target.select()}
                       className="w-16 bg-white border border-gray-300 rounded-lg px-2 py-2 text-sm text-center text-gray-900 focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition-colors font-mono" 
                       min="1" 
                     />
@@ -590,6 +634,7 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
                       type="number" 
                       value={formData.totalParcelas}
                       onChange={(e) => setFormData({...formData, totalParcelas: parseInt(e.target.value) || 2})}
+                      onFocus={(e) => e.target.select()}
                       className="w-16 bg-white border border-gray-300 rounded-lg px-2 py-2 text-sm text-center text-gray-900 focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition-colors font-mono" 
                       min="2" 
                     />
@@ -605,7 +650,7 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
         {/* Footer */}
         <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 shrink-0">
           <button 
-            onClick={onClose}
+            onClick={handleClose}
             className="px-6 py-2.5 text-sm font-bold text-gray-500 hover:text-black hover:bg-gray-200 rounded-xl transition-colors"
           >
             Cancelar
