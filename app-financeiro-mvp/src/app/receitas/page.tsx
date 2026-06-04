@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AppLayout from '@/components/AppLayout';
 import TransactionModal from '@/components/TransactionModal';
-import { Pencil, Trash2, Plus, Search, ChevronLeft, ChevronRight, Import } from 'lucide-react';
+import { Pencil, Trash2, Plus, Search, ChevronLeft, ChevronRight, Import, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { limparDinheiroParaBanco } from '@/lib/formatters';
 import { useMonth } from '@/contexts/MonthContext';
@@ -22,6 +22,17 @@ export default function ReceitasPage() {
   const [membrosAtivos, setMembrosAtivos] = useState<{id: string, nome: string, cor: string}[]>([]);
   const [filtroUsuariosSelecionados, setFiltroUsuariosSelecionados] = useState<string[]>(['Todos']);
   const [isImporting, setIsImporting] = useState(false);
+  const [ordenacao, setOrdenacao] = useState("padrao");
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && itemToDelete) {
+        confirmDelete();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [itemToDelete]);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -82,14 +93,17 @@ export default function ReceitasPage() {
     if (!userData) return;
     setLoading(true);
     
-    const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
-    const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59).toISOString();
+    const anoStr = currentDate.getFullYear();
+    const mesAtualStr = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const ultimoDiaAtual = new Date(anoStr, currentDate.getMonth() + 1, 0).getDate();
+    const startOfCurrentMonth = `${anoStr}-${mesAtualStr}-01`;
+    const endOfCurrentMonth = `${anoStr}-${mesAtualStr}-${String(ultimoDiaAtual).padStart(2, '0')}`;
 
     let query = supabase
       .from('receitas')
       .select('*')
-      .gte('data', startOfMonth)
-      .lte('data', endOfMonth)
+      .gte('data', startOfCurrentMonth)
+      .lte('data', endOfCurrentMonth)
       .order('data', { ascending: false });
     
     // Filtro por Família/Perfil
@@ -156,8 +170,12 @@ export default function ReceitasPage() {
     
     try {
       const prevMonthDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
-      const startOfPrevMonth = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), 1).toISOString();
-      const endOfPrevMonth = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth() + 1, 0, 23, 59, 59).toISOString();
+      const prevAnoStr = prevMonthDate.getFullYear();
+      const prevMesStr = String(prevMonthDate.getMonth() + 1).padStart(2, '0');
+      const prevUltimoDia = new Date(prevAnoStr, prevMonthDate.getMonth() + 1, 0).getDate();
+      
+      const startOfPrevMonth = `${prevAnoStr}-${prevMesStr}-01`;
+      const endOfPrevMonth = `${prevAnoStr}-${prevMesStr}-${String(prevUltimoDia).padStart(2, '0')}`;
 
       let query = supabase
         .from('receitas')
@@ -184,13 +202,15 @@ export default function ReceitasPage() {
         return;
       }
 
-      const primeiroDiaDoMesAtualFormatado = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+      const anoStr = currentDate.getFullYear();
+      const mesAtualStr = String(currentDate.getMonth() + 1).padStart(2, '0');
+      const dataMesAtual = `${anoStr}-${mesAtualStr}-01`;
 
       const novasReceitas = receitasAnteriores.map(receita => {
         const { id, created_at, updated_at, ...rest } = receita;
         return {
           ...rest,
-          data: primeiroDiaDoMesAtualFormatado, // data do mês selecionado na UI
+          data: dataMesAtual, // data do mês selecionado na UI
           status: 'Pendente' // Regra de negócio: Toda importação nasce como pendente
         };
       });
@@ -224,7 +244,6 @@ export default function ReceitasPage() {
   const totalPrevisto = receitas.reduce((acc, curr) => acc + curr.valor, 0);
   const jaRecebido = receitas.filter(r => r.status === 'Recebido').reduce((acc, curr) => acc + curr.valor, 0);
   const aReceber = receitas.filter(r => r.status === 'Pendente').reduce((acc, curr) => acc + curr.valor, 0);
-
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
   };
@@ -384,7 +403,10 @@ export default function ReceitasPage() {
       }
       fetchReceitas();
     } else {
-      dbData.data = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+      const anoStr = currentDate.getFullYear();
+      const mesAtualStr = String(currentDate.getMonth() + 1).padStart(2, '0');
+      const dataMesAtual = `${anoStr}-${mesAtualStr}-01`;
+      dbData.data = dataMesAtual;
       
       const { error } = await supabase
         .from('receitas')
@@ -425,15 +447,30 @@ export default function ReceitasPage() {
               </div>
 
               <div className="flex items-center gap-3 w-full md:w-auto">
-                <div className="relative hidden md:block flex-1 md:w-64">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Search className="w-4 h-4 text-gray-400" />
+                {ordenacao !== 'padrao' && (
+                  <button 
+                    onClick={() => setOrdenacao("padrao")}
+                    className="text-sm text-red-500 hover:text-red-700 font-semibold cursor-pointer flex items-center gap-1 transition-colors mr-2"
+                  >
+                    <X className="w-4 h-4" />
+                    <span className="hidden sm:inline">Limpar</span>
+                  </button>
+                )}
+                <div className="relative hidden md:block flex-1 md:w-auto">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-gray-600 hidden md:block whitespace-nowrap">Ordenar por:</span>
+                    <select 
+                      value={ordenacao}
+                      onChange={(e) => setOrdenacao(e.target.value)}
+                      className="w-full bg-white border border-gray-200 text-sm rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-black transition-colors cursor-pointer"
+                    >
+                      <option value="padrao">Data de Criação</option>
+                      <option value="a_z">A - Z</option>
+                      <option value="z_a">Z - A</option>
+                      <option value="maior_valor">Maior Valor</option>
+                      <option value="menor_valor">Menor Valor</option>
+                    </select>
                   </div>
-                  <input 
-                    type="text" 
-                    placeholder="Buscar receita..." 
-                    className="w-full bg-white border border-gray-200 text-sm rounded-full pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-black transition-colors"
-                  />
                 </div>
                 <button 
                   onClick={handleOpenCreate}
@@ -504,13 +541,23 @@ export default function ReceitasPage() {
             </div>
           </div>
 
-          <div className="bg-white/50 backdrop-blur-md rounded-3xl p-6 md:p-8 shadow-[rgba(255,_255,_255,_0.1)_0px_1px_1px_0px_inset,_rgba(50,_50,_93,_0.25)_0px_50px_100px_-20px,_rgba(0,_0,_0,_0.3)_0px_30px_60px_-30px] border border-white/60 animate-slide-up">
-            
-            <div className="flex justify-between items-center mb-6">
-               <h2 className="text-xl font-semibold font-manrope text-gray-800">
-                 {receitas.length} {receitas.length === 1 ? 'Entrada encontrada' : 'Entradas encontradas'}
-               </h2>
-            </div>
+          {(() => {
+            const sortedReceitas = [...receitas].sort((a, b) => {
+              if (ordenacao === 'a_z') return a.descricao.localeCompare(b.descricao);
+              if (ordenacao === 'z_a') return b.descricao.localeCompare(a.descricao);
+              if (ordenacao === 'maior_valor') return b.valor - a.valor;
+              if (ordenacao === 'menor_valor') return a.valor - b.valor;
+              return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+            });
+
+            return (
+              <div className="bg-white/50 backdrop-blur-md rounded-3xl p-6 md:p-8 shadow-[rgba(255,_255,_255,_0.1)_0px_1px_1px_0px_inset,_rgba(50,_50,_93,_0.25)_0px_50px_100px_-20px,_rgba(0,_0,_0,_0.3)_0px_30px_60px_-30px] border border-white/60 animate-slide-up">
+                
+                <div className="flex justify-between items-center mb-6">
+                   <h2 className="text-xl font-semibold font-manrope text-gray-800">
+                     {sortedReceitas.length} {sortedReceitas.length === 1 ? 'Entrada encontrada' : 'Entradas encontradas'}
+                   </h2>
+                </div>
 
             <div className="w-full overflow-x-auto no-scrollbar bg-white border border-gray-200 rounded-2xl shadow-sm">
               <table className="w-full text-left border-collapse whitespace-nowrap min-w-[700px]">
@@ -559,7 +606,7 @@ export default function ReceitasPage() {
                       </td>
                     </tr>
                   ) : (
-                    receitas.map((item) => (
+                    sortedReceitas.map((item) => (
                       <tr key={item.id} className="hover:bg-gray-50/80 transition-colors group align-middle">
                         <td className="py-4 px-4 text-left">
                           <p className="font-semibold text-gray-800 truncate max-w-[250px]">{item.descricao}</p>
@@ -613,6 +660,8 @@ export default function ReceitasPage() {
               </table>
             </div>
           </div>
+          );
+          })()}
         </main>
 
         <TransactionModal 
@@ -622,6 +671,38 @@ export default function ReceitasPage() {
           onSave={handleSaveModal}
           type="receita"
         />
+
+        {itemToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div 
+              className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"
+              onClick={cancelDelete}
+            ></div>
+            <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden p-6 text-center animate-slide-up">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                <Trash2 className="h-6 w-6 text-red-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Excluir Receita?</h3>
+              <p className="text-sm text-gray-500 mb-6">
+                Tem certeza de que deseja excluir permanentemente esta receita? Esta ação não poderá ser desfeita.
+              </p>
+              <div className="flex gap-3 justify-center">
+                <button 
+                  onClick={cancelDelete}
+                  className="px-4 py-2 font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors w-full"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmDelete}
+                  className="px-4 py-2 font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-md transition-all active:scale-95 w-full"
+                >
+                  Excluir
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <style dangerouslySetInnerHTML={{__html: `
           .no-scrollbar::-webkit-scrollbar {

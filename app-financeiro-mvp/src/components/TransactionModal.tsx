@@ -462,15 +462,27 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
                 value={formData.valor}
                 onChange={(e) => {
                   let val = e.target.value;
-                  val = val.replace(/[^\d,.]/g, '');
-                  val = val.replace('.', ',');
+                  // 1. Se o usuário digitar um ponto para decimais (no fim da string ou antes de até 2 dígitos), converte para vírgula
+                  val = val.replace(/\.(?=\d{0,2}$)/, ',');
+                  // 2. Remove todos os pontos de formatação visual antigos
+                  val = val.replace(/\./g, '');
+                  // 3. Remove tudo que não for dígito numérico ou vírgula
+                  val = val.replace(/[^\d,]/g, '');
+                  
+                  // 4. Garante apenas uma vírgula na string
                   const parts = val.split(',');
                   if (parts.length > 2) val = parts[0] + ',' + parts.slice(1).join('');
+                  
                   let [integerPart, decimalPart] = val.split(',');
+                  
+                  // 5. Formata a parte inteira (milhares)
                   if (integerPart) {
                     integerPart = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
                   }
+                  
+                  // 6. Limita a parte decimal a 2 dígitos
                   if (decimalPart !== undefined) decimalPart = decimalPart.substring(0, 2);
+                  
                   const finalString = decimalPart !== undefined ? integerPart + ',' + decimalPart : integerPart;
                   setFormData({...formData, valor: finalString});
                 }}

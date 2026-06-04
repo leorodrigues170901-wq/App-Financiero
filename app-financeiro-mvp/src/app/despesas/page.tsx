@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { limparDinheiroParaBanco } from '@/lib/formatters';
 import { useMonth } from '@/contexts/MonthContext';
 
-const STATUS_OPCOES = ['Pendente', 'Realizado', 'Pago', 'Direcionado'];
+const STATUS_OPCOES = ['Pendente', 'Realizado'];
 const AUVP_OPCOES = ['Essencial', 'Investimento', 'Prazer', 'Meta Planejada', 'Oportunidade', 'Conforto', 'Aumentar Renda'];
 const GASTOS_OPCOES = ['Custo Fixo Assumido', 'Custo Recorrente Cancelável', 'Custo Recorrente Planejado', 'Custo Variável'];
 
@@ -58,9 +58,20 @@ export default function DespesasPage() {
   const [editingDespesa, setEditingDespesa] = useState<any>(null);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   
-  // Controle de Mês/Ano via Contexto
   const { currentDate, setCurrentDate } = useMonth();
   const [filtroUsuarios, setFiltroUsuarios] = useState<string[]>([]);
+  const [ordenacao, setOrdenacao] = useState("padrao");
+  const [importError, setImportError] = useState<React.ReactNode | string | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && itemToDelete) {
+        confirmDelete();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [itemToDelete]);
 
   const [despesas, setDespesas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -142,15 +153,17 @@ export default function DespesasPage() {
   const fetchDespesas = async () => {
     setLoading(true);
     
-    // Formata primeiro e último dia do mês ativo localmente usando toISOString
-    const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
-    const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59).toISOString();
+    const anoStr = currentDate.getFullYear();
+    const mesAtualStr = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const ultimoDiaAtual = new Date(anoStr, currentDate.getMonth() + 1, 0).getDate();
+    const startOfCurrentMonth = `${anoStr}-${mesAtualStr}-01`;
+    const endOfCurrentMonth = `${anoStr}-${mesAtualStr}-${String(ultimoDiaAtual).padStart(2, '0')}`;
 
     const { data, error } = await supabase
       .from('despesas')
       .select('*')
-      .gte('data', startOfMonth)
-      .lte('data', endOfMonth)
+      .gte('data', startOfCurrentMonth)
+      .lte('data', endOfCurrentMonth)
       .order('data', { ascending: false });
     
     if (error) {
@@ -220,6 +233,7 @@ export default function DespesasPage() {
   }, []);
 
   useEffect(() => {
+    setImportError(null);
     fetchDespesas();
   }, [currentDate]);
 
@@ -269,8 +283,8 @@ export default function DespesasPage() {
 
   // Cálculos Dinâmicos
   const totalPrevisto = filteredDespesas.reduce((acc, curr) => acc + getValorConsiderado(curr), 0);
-  const jaPago = filteredDespesas.filter(d => d.status === 'Pago').reduce((acc, curr) => acc + getValorConsiderado(curr), 0);
-  const faltaPagar = filteredDespesas.filter(d => d.status !== 'Pago').reduce((acc, curr) => acc + getValorConsiderado(curr), 0);
+  const jaPago = filteredDespesas.filter(d => d.status === 'Realizado').reduce((acc, curr) => acc + getValorConsiderado(curr), 0);
+  const faltaPagar = filteredDespesas.filter(d => d.status !== 'Realizado').reduce((acc, curr) => acc + getValorConsiderado(curr), 0);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -383,7 +397,8 @@ export default function DespesasPage() {
       fetchDespesas();
     } else {
       // Criação: Insere o novo registro herdando o mês/ano selecionado na UI (dia 1º)
-      dbData.data = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+      const dataFormatada = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
+      dbData.data = dataFormatada;
       
       const { error } = await supabase
         .from('despesas')
@@ -401,53 +416,101 @@ export default function DespesasPage() {
   const handleImportarMesAnterior = async () => {
     try {
       setIsImporting(true);
+      setImportError(null);
       
-      const prevMonthDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
-      const startOfPrevMonth = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), 1).toISOString();
-      const endOfPrevMonth = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth() + 1, 0, 23, 59, 59).toISOString();
+      const anoStr = currentDate.getFullYear();
+      const mesAtualStr = String(currentDate.getMonth() + 1).padStart(2, '0');
+      const ultimoDiaAtual = new Date(anoStr, currentDate.getMonth() + 1, 0).getDate();
+      const dataMesAtual = `${anoStr}-${mesAtualStr}-01`;
+      const startOfCurrentMonth = `${anoStr}-${mesAtualStr}-01`;
+      const endOfCurrentMonth = `${anoStr}-${mesAtualStr}-${String(ultimoDiaAtual).padStart(2, '0')}`;
 
-      const { data: despesasAnteriores, error } = await supabase
+      const prevMonthDate = new Date(anoStr, currentDate.getMonth() - 1, 1);
+      const prevAnoStr = prevMonthDate.getFullYear();
+      const prevMesStr = String(prevMonthDate.getMonth() + 1).padStart(2, '0');
+      const prevUltimoDia = new Date(prevAnoStr, prevMonthDate.getMonth() + 1, 0).getDate();
+      const startOfPrevMonth = `${prevAnoStr}-${prevMesStr}-01`;
+      const endOfPrevMonth = `${prevAnoStr}-${prevMesStr}-${String(prevUltimoDia).padStart(2, '0')}`;
+
+      // 1. Busca Despesas do Mês Anterior
+      const { data: despesasAnteriores, error: fetchError } = await supabase
         .from('despesas')
         .select('*')
         .gte('data', startOfPrevMonth)
-        .lte('data', endOfPrevMonth)
-        .in('categoria_gastos', ['Custo Fixo Assumido', 'Custo Recorrente Cancelável', 'Custo Recorrente Planejado']);
+        .lte('data', endOfPrevMonth);
 
-      if (error) {
-        console.error('Erro ao buscar despesas do mês anterior:', error);
-        return;
-      }
+      if (fetchError) throw fetchError;
 
-      const despesasFiltradas = despesasAnteriores?.filter(d => {
+      // Aplica a Regra de Elegibilidade para Importação
+      const despesasParaImportar = (despesasAnteriores || []).filter(d => {
         const isParcelado = d.parcelado || d.is_parcelado;
-        if (isParcelado && d.parcela_atual >= d.total_parcelas) {
-          return false;
-        }
-        return true;
-      }) || [];
+        if (isParcelado) return d.parcela_atual < d.total_parcelas;
+        return ['Custo Fixo Assumido', 'Custo Recorrente Cancelável', 'Custo Recorrente Planejado'].includes(d.categoria_gastos);
+      });
 
-      if (despesasFiltradas.length === 0) {
+      // 2. Busca Receitas do Mês Atual
+      let queryReceitas = supabase
+        .from('receitas')
+        .select('valor')
+        .gte('data', startOfCurrentMonth)
+        .lte('data', endOfCurrentMonth);
+      
+      if (userData?.familiaId) {
+        queryReceitas = queryReceitas.eq('familia_id', userData.familiaId);
+      } else {
+        queryReceitas = queryReceitas.eq('perfil_id', userData?.perfilId);
+      }
+
+      const { data: receitasAtuais, error: recError } = await queryReceitas;
+      if (recError) throw recError;
+
+      const somaReceitas = (receitasAtuais || []).reduce((acc, curr) => acc + Number(curr.valor), 0);
+
+      // 3. O BLOQUEIO DE CONSCIÊNCIA INTELIGENTE
+      if (despesasParaImportar.length === 0 && somaReceitas <= 0) {
+        setImportError(
+          <div className="flex flex-col gap-1">
+            <span className="font-bold text-red-600">Atenção Dupla!</span>
+            <span className="text-sm text-red-500">Não há despesas válidas no mês passado para importar E você ainda não registrou receitas neste mês. Registre suas receitas primeiro.</span>
+          </div>
+        );
         return;
       }
 
-      const novasDespesas = despesasFiltradas.map(d => {
+      if (despesasParaImportar.length > 0 && somaReceitas <= 0) {
+        setImportError(
+          <div className="flex flex-col gap-1">
+            <span className="font-bold text-red-600">Bloqueio de Consciência!</span>
+            <span className="text-sm text-red-500">Há <strong>{despesasParaImportar.length} despesa(s)</strong> prontas para importação, mas nenhuma receita registrada neste mês. O sistema exige a entrada de receitas antes de assumir novos gastos.</span>
+          </div>
+        );
+        return;
+      }
+
+      if (despesasParaImportar.length === 0 && somaReceitas > 0) {
+        setImportError(
+          <div className="flex flex-col gap-1">
+            <span className="font-bold text-red-600">Tudo limpo!</span>
+            <span className="text-sm text-red-500">Não encontramos despesas fixas ou parcelas ativas no mês anterior para importar.</span>
+          </div>
+        );
+        return;
+      }
+
+      // 4. Executa a Inserção Limpa
+      const novasDespesas = despesasParaImportar.map(d => {
         const { id, created_at, updated_at, ...rest } = d;
         const isParcelado = rest.parcelado || rest.is_parcelado;
-        
         return {
           ...rest,
-          data: new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString(),
+          data: dataMesAtual,
           status: 'Pendente',
           parcela_atual: isParcelado ? (rest.parcela_atual || 1) + 1 : rest.parcela_atual
         };
       });
 
       const { error: insertError } = await supabase.from('despesas').insert(novasDespesas);
-
-      if (insertError) {
-        console.error('Erro ao importar despesas:', insertError);
-        return;
-      }
+      if (insertError) throw insertError;
 
       fetchDespesas();
 
@@ -485,23 +548,30 @@ export default function DespesasPage() {
               </div>
 
               <div className="flex items-center gap-3 w-full md:w-auto">
-                <div className="relative hidden md:block flex-1 md:w-64">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Search className="w-4 h-4 text-gray-400" />
+                <div className="relative hidden md:block flex-1 md:w-auto">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-gray-600 hidden md:block whitespace-nowrap">Ordenar por:</span>
+                    <select 
+                      value={ordenacao}
+                      onChange={(e) => setOrdenacao(e.target.value)}
+                      className="w-full bg-white border border-gray-200 text-sm rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-black transition-colors cursor-pointer"
+                    >
+                      <option value="padrao">Data de Criação</option>
+                      <option value="a_z">A - Z</option>
+                      <option value="z_a">Z - A</option>
+                      <option value="maior_valor">Maior Valor</option>
+                      <option value="menor_valor">Menor Valor</option>
+                    </select>
                   </div>
-                  <input 
-                    type="text" 
-                    placeholder="Buscar despesa..." 
-                    className="w-full bg-white border border-gray-200 text-sm rounded-full pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-black transition-colors"
-                  />
                 </div>
 
-                {qtdFiltrosAtivos > 0 && (
+                {(qtdFiltrosAtivos > 0 || ordenacao !== 'padrao') && (
                   <button 
                     onClick={() => {
                       setFiltroStatus([]);
                       setFiltroAUVP([]);
                       setFiltroGastos([]);
+                      setOrdenacao("padrao");
                     }}
                     className="text-sm text-red-500 hover:text-red-700 font-semibold cursor-pointer flex items-center gap-1 transition-colors"
                   >
@@ -591,6 +661,7 @@ export default function DespesasPage() {
                             setFiltroStatus([]);
                             setFiltroAUVP([]);
                             setFiltroGastos([]);
+                            setOrdenacao("padrao");
                           }}
                           className="w-full py-2 text-sm font-medium text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
                         >
@@ -673,13 +744,29 @@ export default function DespesasPage() {
             </div>
           </div>
 
-          <div className="bg-white/50 backdrop-blur-md rounded-3xl p-6 md:p-8 shadow-[rgba(255,_255,_255,_0.1)_0px_1px_1px_0px_inset,_rgba(50,_50,_93,_0.25)_0px_50px_100px_-20px,_rgba(0,_0,_0,_0.3)_0px_30px_60px_-30px] border border-white/60 animate-slide-up">
-            
-            <div className="flex justify-between items-center mb-6">
-               <h2 className="text-xl font-semibold font-manrope text-gray-800">
-                 {filteredDespesas.length} {filteredDespesas.length === 1 ? 'Lançamento encontrado' : 'Lançamentos encontrados'}
-               </h2>
-            </div>
+          {(() => {
+            const sortedData = [...filteredDespesas].sort((a, b) => {
+              if (ordenacao === 'a_z') return a.descricao.localeCompare(b.descricao);
+              if (ordenacao === 'z_a') return b.descricao.localeCompare(a.descricao);
+              if (ordenacao === 'maior_valor') return b.valor - a.valor;
+              if (ordenacao === 'menor_valor') return a.valor - b.valor;
+              return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+            });
+
+            return (
+              <div className="bg-white/50 backdrop-blur-md rounded-3xl p-6 md:p-8 shadow-[rgba(255,_255,_255,_0.1)_0px_1px_1px_0px_inset,_rgba(50,_50,_93,_0.25)_0px_50px_100px_-20px,_rgba(0,_0,_0,_0.3)_0px_30px_60px_-30px] border border-white/60 animate-slide-up">
+                
+                {importError && (
+                  <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm font-semibold animate-fade-in shadow-sm">
+                    {importError}
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center mb-6">
+                   <h2 className="text-xl font-semibold font-manrope text-gray-800">
+                     {sortedData.length} {sortedData.length === 1 ? 'Lançamento encontrado' : 'Lançamentos encontrados'}
+                   </h2>
+                </div>
 
             <div className="w-full overflow-x-auto no-scrollbar bg-white border border-gray-200 rounded-2xl shadow-sm">
               <table className="w-full text-left border-collapse whitespace-nowrap min-w-[800px]">
@@ -730,7 +817,7 @@ export default function DespesasPage() {
                       </td>
                     </tr>
                   ) : (
-                    filteredDespesas.map((item) => (
+                    sortedData.map((item) => (
                       <tr key={item.id} className="hover:bg-gray-50/80 transition-colors group align-middle">
                         <td className="py-4 px-4 text-left">
                           <p className="font-semibold text-gray-800 truncate max-w-[250px]">{item.descricao}</p>
@@ -828,6 +915,8 @@ export default function DespesasPage() {
               </table>
             </div>
           </div>
+          );
+          })()}
         </main>
 
         <TransactionModal 
