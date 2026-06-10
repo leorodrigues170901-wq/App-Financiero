@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
@@ -18,6 +18,18 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    // Tenta limpar sessões presas no LocalStorage que causam loop de refresh
+    const clearZombieSession = async () => {
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        // Ignora erros no signOut silencioso
+      }
+    };
+    clearZombieSession();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,7 +75,11 @@ export default function LoginPage() {
         alert('Conta criada com sucesso! Faça o login para acessar o sistema.');
       }
     } catch (err: any) {
-      setError(err.message || 'Ocorreu um erro inesperado.');
+      if (err.message === 'Failed to fetch' || err.message.includes('fetch')) {
+         setError('Erro de conexão com o servidor. Verifique sua internet ou se o banco de dados está ativo.');
+      } else {
+         setError(err.message || 'E-mail ou senha incorretos.');
+      }
     } finally {
       setIsLoading(false);
     }

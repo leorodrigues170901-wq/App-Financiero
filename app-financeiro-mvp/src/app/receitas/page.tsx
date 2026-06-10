@@ -464,11 +464,15 @@ export default function ReceitasPage() {
                       onChange={(e) => setOrdenacao(e.target.value)}
                       className="w-full bg-white border border-gray-200 text-sm rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-black transition-colors cursor-pointer"
                     >
-                      <option value="padrao">Data de Criação</option>
-                      <option value="a_z">A - Z</option>
-                      <option value="z_a">Z - A</option>
-                      <option value="maior_valor">Maior Valor</option>
-                      <option value="menor_valor">Menor Valor</option>
+                      <option value="padrao">Padrão (Data de Criação)</option>
+                      <optgroup label="Descrição">
+                        <option value="descricao_az">A a Z</option>
+                        <option value="descricao_za">Z a A</option>
+                      </optgroup>
+                      <optgroup label="Valor (R$)">
+                        <option value="maior_valor">Maior Valor</option>
+                        <option value="menor_valor">Menor Valor</option>
+                      </optgroup>
                     </select>
                   </div>
                 </div>
@@ -543,10 +547,11 @@ export default function ReceitasPage() {
 
           {(() => {
             const sortedReceitas = [...receitas].sort((a, b) => {
-              if (ordenacao === 'a_z') return a.descricao.localeCompare(b.descricao);
-              if (ordenacao === 'z_a') return b.descricao.localeCompare(a.descricao);
+              if (ordenacao === 'descricao_az') return a.descricao.localeCompare(b.descricao);
+              if (ordenacao === 'descricao_za') return b.descricao.localeCompare(a.descricao);
               if (ordenacao === 'maior_valor') return b.valor - a.valor;
               if (ordenacao === 'menor_valor') return a.valor - b.valor;
+              if (ordenacao === 'padrao') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
               return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
             });
 

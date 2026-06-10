@@ -82,6 +82,7 @@ export default function DespesasPage() {
   const [filtroStatus, setFiltroStatus] = useState<string[]>([]);
   const [filtroAUVP, setFiltroAUVP] = useState<string[]>([]);
   const [filtroGastos, setFiltroGastos] = useState<string[]>([]);
+  const [filtroGastosIndividuais, setFiltroGastosIndividuais] = useState<string[]>([]);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
   const filterMenuRef = useRef<HTMLDivElement>(null);
 
@@ -184,7 +185,8 @@ export default function DespesasPage() {
         parcelado: item.parcelado || item.is_parcelado || false,
         parcela_atual: item.parcela_atual || 1,
         total_parcelas: item.total_parcelas || 1,
-        data: item.data
+        data: item.data,
+        created_at: item.created_at
       }));
       setDespesas(mapped);
     }
@@ -251,7 +253,7 @@ export default function DespesasPage() {
 
 
   // Lógica de Filtragem
-  const qtdFiltrosAtivos = filtroStatus.length + filtroAUVP.length + filtroGastos.length;
+  const qtdFiltrosAtivos = filtroStatus.length + filtroAUVP.length + filtroGastos.length + filtroGastosIndividuais.length;
 
   const filteredDespesas = despesas.filter(d => {
     let passUsuario = true;
@@ -263,8 +265,9 @@ export default function DespesasPage() {
     const passStatus = filtroStatus.length === 0 || filtroStatus.includes(d.status);
     const passAUVP = filtroAUVP.length === 0 || filtroAUVP.includes(d.classificacao_auvp);
     const passGastos = filtroGastos.length === 0 || filtroGastos.includes(d.categoria_gastos);
+    const passIndividual = filtroGastosIndividuais.length === 0 || (d.responsaveis_divisao?.length === 1 && filtroGastosIndividuais.includes(d.responsaveis_divisao[0].id));
 
-    return passUsuario && passStatus && passAUVP && passGastos;
+    return passUsuario && passStatus && passAUVP && passGastos && passIndividual;
   });
 
   // Função auxiliar para obter o valor real (fatiado ou integral)
@@ -556,11 +559,19 @@ export default function DespesasPage() {
                       onChange={(e) => setOrdenacao(e.target.value)}
                       className="w-full bg-white border border-gray-200 text-sm rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-black transition-colors cursor-pointer"
                     >
-                      <option value="padrao">Data de Criação</option>
-                      <option value="a_z">A - Z</option>
-                      <option value="z_a">Z - A</option>
-                      <option value="maior_valor">Maior Valor</option>
-                      <option value="menor_valor">Menor Valor</option>
+                      <option value="padrao">Padrão (Data de Criação)</option>
+                      <optgroup label="Descrição">
+                        <option value="descricao_az">A a Z</option>
+                        <option value="descricao_za">Z a A</option>
+                      </optgroup>
+                      <optgroup label="Classificação AUVP">
+                        <option value="auvp_az">A a Z</option>
+                        <option value="auvp_za">Z a A</option>
+                      </optgroup>
+                      <optgroup label="Valor (R$)">
+                        <option value="maior_valor">Maior Valor</option>
+                        <option value="menor_valor">Menor Valor</option>
+                      </optgroup>
                     </select>
                   </div>
                 </div>
@@ -571,6 +582,7 @@ export default function DespesasPage() {
                       setFiltroStatus([]);
                       setFiltroAUVP([]);
                       setFiltroGastos([]);
+                      setFiltroGastosIndividuais([]);
                       setOrdenacao("padrao");
                     }}
                     className="text-sm text-red-500 hover:text-red-700 font-semibold cursor-pointer flex items-center gap-1 transition-colors"
@@ -653,6 +665,27 @@ export default function DespesasPage() {
                             ))}
                           </div>
                         </div>
+
+                        <div className="space-y-3">
+                          <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Gastos 100% Individuais</h4>
+                          <div className="space-y-2">
+                            {membrosAtivos.map(membro => (
+                              <label key={membro.id} className="flex items-center gap-3 cursor-pointer group">
+                                <input 
+                                  type="checkbox" 
+                                  className="w-4 h-4 rounded border-zinc-600 text-blue-500 focus:ring-blue-500 bg-zinc-800 accent-blue-500"
+                                  checked={filtroGastosIndividuais.includes(membro.id)}
+                                  onChange={() => {
+                                    setFiltroGastosIndividuais(prev => 
+                                      prev.includes(membro.id) ? prev.filter(v => v !== membro.id) : [...prev, membro.id]
+                                    );
+                                  }}
+                                />
+                                <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">{membro.nome_usuario}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
                       </div>
 
                       <div className="p-3 border-t border-zinc-800 bg-zinc-950">
@@ -661,6 +694,7 @@ export default function DespesasPage() {
                             setFiltroStatus([]);
                             setFiltroAUVP([]);
                             setFiltroGastos([]);
+                            setFiltroGastosIndividuais([]);
                             setOrdenacao("padrao");
                           }}
                           className="w-full py-2 text-sm font-medium text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
@@ -746,10 +780,13 @@ export default function DespesasPage() {
 
           {(() => {
             const sortedData = [...filteredDespesas].sort((a, b) => {
-              if (ordenacao === 'a_z') return a.descricao.localeCompare(b.descricao);
-              if (ordenacao === 'z_a') return b.descricao.localeCompare(a.descricao);
+              if (ordenacao === 'descricao_az') return a.descricao.localeCompare(b.descricao);
+              if (ordenacao === 'descricao_za') return b.descricao.localeCompare(a.descricao);
+              if (ordenacao === 'auvp_az') return a.classificacao_auvp.localeCompare(b.classificacao_auvp);
+              if (ordenacao === 'auvp_za') return b.classificacao_auvp.localeCompare(a.classificacao_auvp);
               if (ordenacao === 'maior_valor') return b.valor - a.valor;
               if (ordenacao === 'menor_valor') return a.valor - b.valor;
+              if (ordenacao === 'padrao') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
               return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
             });
 
