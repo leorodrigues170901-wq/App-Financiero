@@ -83,6 +83,7 @@ export default function DespesasPage() {
   const [filtroAUVP, setFiltroAUVP] = useState<string[]>([]);
   const [filtroGastos, setFiltroGastos] = useState<string[]>([]);
   const [filtroGastosIndividuais, setFiltroGastosIndividuais] = useState<string[]>([]);
+  const [filtroGastosCompartilhados, setFiltroGastosCompartilhados] = useState<string[]>([]);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
   const filterMenuRef = useRef<HTMLDivElement>(null);
 
@@ -174,20 +175,39 @@ export default function DespesasPage() {
     }
 
     if (data) {
-      const mapped = data.map((item: any) => ({
-        id: item.id,
-        descricao: item.descricao,
-        responsaveis_divisao: item.responsaveis_divisao || [],
-        classificacao_auvp: item.classificacao_auvp || item.auvp || 'Essencial',
-        categoria_gastos: item.categoria_gastos || item.categoria || 'Variável',
-        valor: Number(item.valor),
-        status: item.status || 'Pendente',
-        parcelado: item.parcelado || item.is_parcelado || false,
-        parcela_atual: item.parcela_atual || 1,
-        total_parcelas: item.total_parcelas || 1,
-        data: item.data,
-        created_at: item.created_at
-      }));
+      const mapped = data.map((item: any) => {
+        let responsaveis = item.responsaveis_divisao || [];
+        const valorTotal = Number(item.valor);
+
+        // Fallback Crítico: Se a array desapareceu, recria com o dono original a 100%
+        if (responsaveis.length === 0) {
+           responsaveis = [{ id: item.perfil_id, nome: 'Desconhecido', percentual: 100, valor: valorTotal }];
+        }
+
+        // Auto-Reparação: Se a despesa é INDIVIDUAL, a fatia tem obrigatoriamente de ser igual ao valor total.
+        if (responsaveis.length === 1) {
+           if (Number(responsaveis[0].valor) !== valorTotal) {
+              responsaveis[0].valor = valorTotal;
+              responsaveis[0].percentual = 100;
+           }
+        }
+
+        return {
+          id: item.id,
+          descricao: item.descricao,
+          responsaveis_divisao: responsaveis,
+          classificacao_auvp: item.classificacao_auvp || item.auvp || 'Essencial',
+          categoria_gastos: item.categoria_gastos || item.categoria || 'Variável',
+          tipo_divisao: item.tipo_divisao || 'Igualitária',
+          valor: valorTotal,
+          status: item.status || 'Pendente',
+          parcelado: item.parcelado || item.is_parcelado || false,
+          parcela_atual: item.parcela_atual || 1,
+          total_parcelas: item.total_parcelas || 1,
+          data: item.data,
+          created_at: item.created_at
+        };
+      });
       setDespesas(mapped);
     }
     setLoading(false);
@@ -253,7 +273,7 @@ export default function DespesasPage() {
 
 
   // Lógica de Filtragem
-  const qtdFiltrosAtivos = filtroStatus.length + filtroAUVP.length + filtroGastos.length + filtroGastosIndividuais.length;
+  const qtdFiltrosAtivos = filtroStatus.length + filtroAUVP.length + filtroGastos.length + filtroGastosIndividuais.length + filtroGastosCompartilhados.length;
 
   const filteredDespesas = despesas.filter(d => {
     let passUsuario = true;
@@ -266,22 +286,27 @@ export default function DespesasPage() {
     const passAUVP = filtroAUVP.length === 0 || filtroAUVP.includes(d.classificacao_auvp);
     const passGastos = filtroGastos.length === 0 || filtroGastos.includes(d.categoria_gastos);
     const passIndividual = filtroGastosIndividuais.length === 0 || (d.responsaveis_divisao?.length === 1 && filtroGastosIndividuais.includes(d.responsaveis_divisao[0].id));
+    const passCompartilhado = filtroGastosCompartilhados.length === 0 || 
+      (d.responsaveis_divisao?.length > 1 && 
+       filtroGastosCompartilhados.every(userId => d.responsaveis_divisao.some((resp: any) => resp.id === userId)));
 
-    return passUsuario && passStatus && passAUVP && passGastos && passIndividual;
+    return passUsuario && passStatus && passAUVP && passGastos && passIndividual && passCompartilhado;
   });
 
   // Função auxiliar para obter o valor real (fatiado ou integral)
   const getValorConsiderado = (despesa: any) => {
-    if (filtroUsuarios.length === 0) return despesa.valor;
-    
+    // Se não há filtro global de utilizador (todos selecionados): soma o total absoluto
+    if (!filtroUsuarios || filtroUsuarios.length === 0) return Number(despesa.valor || 0);
+
     const responsaveis = despesa.responsaveis_divisao || [];
     const fatiasFiltradas = responsaveis.filter((r: any) => filtroUsuarios.includes(r.id));
-    
+
+    // Com filtro global ativo: soma OBRIGATORIAMENTE apenas as fatias do(s) utilizador(es) filtrado(s)
     if (fatiasFiltradas.length > 0) {
       return fatiasFiltradas.reduce((sum: number, r: any) => sum + Number(r.valor || 0), 0);
     }
     
-    return despesa.valor;
+    return 0; // Retorno de segurança
   };
 
   // Cálculos Dinâmicos
@@ -583,6 +608,7 @@ export default function DespesasPage() {
                       setFiltroAUVP([]);
                       setFiltroGastos([]);
                       setFiltroGastosIndividuais([]);
+                      setFiltroGastosCompartilhados([]);
                       setOrdenacao("padrao");
                     }}
                     className="text-sm text-red-500 hover:text-red-700 font-semibold cursor-pointer flex items-center gap-1 transition-colors"
@@ -686,6 +712,27 @@ export default function DespesasPage() {
                             ))}
                           </div>
                         </div>
+
+                        <div className="space-y-3">
+                          <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Gastos Compartilhados</h4>
+                          <div className="space-y-2">
+                            {membrosAtivos.map(membro => (
+                              <label key={`comp-${membro.id}`} className="flex items-center gap-3 cursor-pointer group">
+                                <input 
+                                  type="checkbox" 
+                                  className="w-4 h-4 rounded border-zinc-600 text-blue-500 focus:ring-blue-500 bg-zinc-800 accent-blue-500"
+                                  checked={filtroGastosCompartilhados.includes(membro.id)}
+                                  onChange={() => {
+                                    setFiltroGastosCompartilhados(prev => 
+                                      prev.includes(membro.id) ? prev.filter(v => v !== membro.id) : [...prev, membro.id]
+                                    );
+                                  }}
+                                />
+                                <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">{membro.nome_usuario}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
                       </div>
 
                       <div className="p-3 border-t border-zinc-800 bg-zinc-950">
@@ -695,6 +742,7 @@ export default function DespesasPage() {
                             setFiltroAUVP([]);
                             setFiltroGastos([]);
                             setFiltroGastosIndividuais([]);
+                            setFiltroGastosCompartilhados([]);
                             setOrdenacao("padrao");
                           }}
                           className="w-full py-2 text-sm font-medium text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
@@ -854,7 +902,11 @@ export default function DespesasPage() {
                       </td>
                     </tr>
                   ) : (
-                    sortedData.map((item) => (
+                    sortedData.map((item) => {
+                      const somaFatias = item.responsaveis_divisao?.reduce((acc: number, curr: any) => acc + Number(curr.valor || 0), 0) || 0;
+                      const erroMatematico = item.responsaveis_divisao?.length > 1 && Math.abs(somaFatias - Number(item.valor)) > 0.05;
+
+                      return (
                       <tr key={item.id} className="hover:bg-gray-50/80 transition-colors group align-middle">
                         <td className="py-4 px-4 text-left">
                           <p className="font-semibold text-gray-800 truncate max-w-[250px]">{item.descricao}</p>
@@ -896,6 +948,7 @@ export default function DespesasPage() {
                           <div className="font-bold text-gray-900 text-[15px]">
                             {formatCurrency(item.valor)}
                           </div>
+                          {erroMatematico && <span className="text-[10px] text-red-500 font-bold block mt-1">⚠️ Erro de Rateio (Editar)</span>}
                           
                           {item.responsaveis_divisao?.length > 1 && (
                             <div className="flex justify-center gap-1.5 mt-1.5 flex-wrap max-w-[150px] mx-auto">
@@ -946,7 +999,8 @@ export default function DespesasPage() {
                           </div>
                         </td>
                       </tr>
-                    ))
+                    );
+                    })
                   )}
                 </tbody>
               </table>

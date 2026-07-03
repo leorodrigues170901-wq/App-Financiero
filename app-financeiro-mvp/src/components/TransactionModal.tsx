@@ -422,11 +422,15 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
         onClick={handleClose}
       ></div>
       
-      <div className="relative w-full max-w-lg bg-white border border-gray-200 rounded-3xl shadow-2xl overflow-hidden animate-slide-up flex flex-col max-h-[90vh]">
+      <form 
+        onSubmit={(e) => { e.preventDefault(); handleSaveClick(); }}
+        className="relative w-full max-w-lg bg-white border border-gray-200 rounded-3xl shadow-2xl overflow-hidden animate-slide-up flex flex-col max-h-[90vh]"
+      >
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-gray-100">
           <h3 className="text-lg font-bold text-gray-900">{title}</h3>
           <button 
+            type="button"
             onClick={handleClose}
             className="text-gray-400 hover:text-black transition-colors p-1 rounded-full hover:bg-gray-100"
           >
@@ -662,19 +666,20 @@ export default function TransactionModal({ isOpen, onClose, initialData, onSave,
         {/* Footer */}
         <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 shrink-0">
           <button 
+            type="button"
             onClick={handleClose}
             className="px-6 py-2.5 text-sm font-bold text-gray-500 hover:text-black hover:bg-gray-200 rounded-xl transition-colors"
           >
             Cancelar
           </button>
           <button 
-            onClick={handleSaveClick}
+            type="submit"
             className="px-6 py-2.5 text-sm font-bold text-white bg-black hover:bg-gray-800 rounded-xl shadow-md transition-all active:scale-95"
           >
             {buttonText}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
