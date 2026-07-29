@@ -1,0 +1,37 @@
+{"timestamp":"00:00:01.611","source":"Server","level":"LOG","message":""}
+{"timestamp":"00:00:04.463","source":"Browser","level":"INFO","message":"Download the React DevTools for a better development experience: https://react.dev/link/react-devtools"}
+{"timestamp":"00:00:08.529","source":"Browser","level":"INFO","message":"Download the React DevTools for a better development experience: https://react.dev/link/react-devtools"}
+{"timestamp":"00:00:40.747","source":"Browser","level":"LOG","message":"=== DIAGNÓSTICO AUVP ==="}
+{"timestamp":"00:00:40.747","source":"Browser","level":"LOG","message":"1. Filtro Mês Selecionado (Exato): "}
+{"timestamp":"00:00:40.748","source":"Browser","level":"LOG","message":"2. Filtro Usuário Selecionado (Exato): "}
+{"timestamp":"00:00:40.748","source":"Browser","level":"LOG","message":"=== DIAGNÓSTICO AUVP ==="}
+{"timestamp":"00:00:40.748","source":"Browser","level":"LOG","message":"1. Filtro Mês Selecionado (Exato): "}
+{"timestamp":"00:00:40.748","source":"Browser","level":"LOG","message":"2. Filtro Usuário Selecionado (Exato): "}
+{"timestamp":"00:00:41.938","source":"Browser","level":"LOG","message":"=== DIAGNÓSTICO AUVP ==="}
+{"timestamp":"00:00:41.938","source":"Browser","level":"LOG","message":"1. Filtro Mês Selecionado (Exato): "}
+{"timestamp":"00:00:41.938","source":"Browser","level":"LOG","message":"2. Filtro Usuário Selecionado (Exato): f07f300b-d350-4e99-a727-d4b0cac13487"}
+{"timestamp":"00:00:42.019","source":"Browser","level":"LOG","message":"=== DIAGNÓSTICO AUVP ==="}
+{"timestamp":"00:00:42.019","source":"Browser","level":"LOG","message":"1. Filtro Mês Selecionado (Exato): 2026-07"}
+{"timestamp":"00:00:42.019","source":"Browser","level":"LOG","message":"2. Filtro Usuário Selecionado (Exato): f07f300b-d350-4e99-a727-d4b0cac13487"}
+{"timestamp":"00:00:42.261","source":"Browser","level":"LOG","message":"=== DIAGNÓSTICO AUVP ==="}
+{"timestamp":"00:00:42.261","source":"Browser","level":"LOG","message":"1. Filtro Mês Selecionado (Exato): 2026-07"}
+{"timestamp":"00:00:42.261","source":"Browser","level":"LOG","message":"2. Filtro Usuário Selecionado (Exato): f07f300b-d350-4e99-a727-d4b0cac13487"}
+{"timestamp":"00:00:42.262","source":"Browser","level":"LOG","message":"3. Amostra Receita (Primeiro item): {\"created_at\":\"2026-07-03T19:27:21.573528+00:00\",\"data\":\"2026-07-01\",\"descricao\":\"AMR Engenharia\",\"familia_id\":\"4270a8da-2987-426c-aec8-ccb733e42147\",\"id\":\"594c5574-a024-4e9e-8b45-57148290c717\",\"perfil_id\":\"f07f300b-d350-4e99-a727-d4b0cac13487\",\"status\":\"Recebido\",\"updated_at\":\"2026-07-03T19:29:06.983143+00:00\",\"valor\":2000}"}
+{"timestamp":"00:00:42.263","source":"Browser","level":"LOG","message":"4. Amostra Despesa (Primeiro item): {\"auvp\":\"Aumentar Renda\",\"categoria\":\"Custo Fixo Assumido\",\"categoria_gastos\":\"Custo Fixo Assumido\",\"classificacao_auvp\":\"Aumentar Renda\",\"created_at\":\"2026-07-03T19:30:58.94718+00:00\",\"data\":\"2026-07-01\",\"descricao\":\"Curso Marketing\",\"familia_id\":\"4270a8da-2987-426c-aec8-ccb733e42147\",\"forma_pagamento\":\"Pix\",\"id\":\"ceefe92e-81cd-4305-b106-c373aca6d0a0\",\"is_parcelado\":true,\"parcela_atual\":9,\"parcelado\":true,\"perfil_id\":\"05ea4670-3edb-4659-8eb4-29607dd9f6fb\",\"responsaveis_divisao\":[{\"id\":\"05ea4670-3edb-4659-8eb4-29607dd9f6fb\",\"nome\":\"Bia\",\"percentual\":100,\"valor\":143.22}],\"responsavel\":null,\"status\":\"Realizado\",\"tipo_divisao\":\"Igualitária\",\"total_parcelas\":12,\"updated_at\":\"2026-07-03T19:41:15.761818+00:00\",\"valor\":143.22}"}
+{"timestamp":"00:01:07.304","source":"Browser","level":"LOG","message":"=== DIAGNÓSTICO AUVP ==="}
+{"timestamp":"00:01:07.304","source":"Browser","level":"LOG","message":"1. Filtro Mês Selecionado (Exato): "}
+{"timestamp":"00:01:07.304","source":"Browser","level":"LOG","message":"2. Filtro Usuário Selecionado (Exato): "}
+{"timestamp":"00:01:07.304","source":"Browser","level":"LOG","message":"=== DIAGNÓSTICO AUVP ==="}
+{"timestamp":"00:01:07.304","source":"Browser","level":"LOG","message":"1. Filtro Mês Selecionado (Exato): "}
+{"timestamp":"00:01:07.304","source":"Browser","level":"LOG","message":"2. Filtro Usuário Selecionado (Exato): "}
+{"timestamp":"00:01:08.090","source":"Browser","level":"LOG","message":"=== DIAGNÓSTICO AUVP ==="}
+{"timestamp":"00:01:08.090","source":"Browser","level":"LOG","message":"1. Filtro Mês Selecionado (Exato): "}
+{"timestamp":"00:01:08.090","source":"Browser","level":"LOG","message":"2. Filtro Usuário Selecionado (Exato): f07f300b-d350-4e99-a727-d4b0cac13487"}
+{"timestamp":"00:01:08.190","source":"Browser","level":"LOG","message":"=== DIAGNÓSTICO AUVP ==="}
+{"timestamp":"00:01:08.190","source":"Browser","level":"LOG","message":"1. Filtro Mês Selecionado (Exato): 2026-07"}
+{"timestamp":"00:01:08.190","source":"Browser","level":"LOG","message":"2. Filtro Usuário Selecionado (Exato): f07f300b-d350-4e99-a727-d4b0cac13487"}
+{"timestamp":"00:01:08.416","source":"Browser","level":"LOG","message":"=== DIAGNÓSTICO AUVP ==="}
+{"timestamp":"00:01:08.416","source":"Browser","level":"LOG","message":"1. Filtro Mês Selecionado (Exato): 2026-07"}
+{"timestamp":"00:01:08.416","source":"Browser","level":"LOG","message":"2. Filtro Usuário Selecionado (Exato): f07f300b-d350-4e99-a727-d4b0cac13487"}
+{"timestamp":"00:01:08.416","source":"Browser","level":"LOG","message":"3. Amostra Receita (Primeiro item): {\"created_at\":\"2026-07-03T19:27:21.573528+00:00\",\"data\":\"2026-07-01\",\"descricao\":\"AMR Engenharia\",\"familia_id\":\"4270a8da-2987-426c-aec8-ccb733e42147\",\"id\":\"594c5574-a024-4e9e-8b45-57148290c717\",\"perfil_id\":\"f07f300b-d350-4e99-a727-d4b0cac13487\",\"status\":\"Recebido\",\"updated_at\":\"2026-07-03T19:29:06.983143+00:00\",\"valor\":2000}"}
+{"timestamp":"00:01:08.417","source":"Browser","level":"LOG","message":"4. Amostra Despesa (Primeiro item): {\"auvp\":\"Aumentar Renda\",\"categoria\":\"Custo Fixo Assumido\",\"categoria_gastos\":\"Custo Fixo Assumido\",\"classificacao_auvp\":\"Aumentar Renda\",\"created_at\":\"2026-07-03T19:30:58.94718+00:00\",\"data\":\"2026-07-01\",\"descricao\":\"Curso Marketing\",\"familia_id\":\"4270a8da-2987-426c-aec8-ccb733e42147\",\"forma_pagamento\":\"Pix\",\"id\":\"ceefe92e-81cd-4305-b106-c373aca6d0a0\",\"is_parcelado\":true,\"parcela_atual\":9,\"parcelado\":true,\"perfil_id\":\"05ea4670-3edb-4659-8eb4-29607dd9f6fb\",\"responsaveis_divisao\":[{\"id\":\"05ea4670-3edb-4659-8eb4-29607dd9f6fb\",\"nome\":\"Bia\",\"percentual\":100,\"valor\":143.22}],\"responsavel\":null,\"status\":\"Realizado\",\"tipo_divisao\":\"Igualitária\",\"total_parcelas\":12,\"updated_at\":\"2026-07-03T19:41:15.761818+00:00\",\"valor\":143.22}"}
