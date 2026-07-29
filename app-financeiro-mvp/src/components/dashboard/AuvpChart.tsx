@@ -36,6 +36,18 @@ export default function AuvpChart() {
   const [receitas, setReceitas] = useState<any[]>([]);
   const [despesas, setDespesas] = useState<any[]>([]);
 
+  useEffect(() => {
+    console.log("=== DIAGNÓSTICO AUVP ===");
+    console.log("1. Filtro Mês Selecionado (Exato):", mesAnoSelecionado);
+    console.log("2. Filtro Usuário Selecionado (Exato):", usuarioSelecionado);
+    if (receitas && receitas.length > 0) {
+      console.log("3. Amostra Receita (Primeiro item):", receitas[0]);
+    }
+    if (despesas && despesas.length > 0) {
+      console.log("4. Amostra Despesa (Primeiro item):", despesas[0]);
+    }
+  }, [mesAnoSelecionado, usuarioSelecionado, receitas, despesas]);
+
   const getChaveMesAno = (dataString: string) => {
     if (!dataString) return "";
     // Pega exatamente "YYYY-MM" do formato "YYYY-MM-DDTHH..."
