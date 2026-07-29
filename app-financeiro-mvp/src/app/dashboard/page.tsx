@@ -10,7 +10,7 @@ export default function DashboardPage() {
         {/* Header */}
         <div className="bg-white sticky top-0 z-40 border-b border-gray-200 py-5 mb-8 shadow-sm">
           <div className="mx-auto max-w-[1400px] px-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <h1 className="text-xl font-bold font-manrope tracking-tight text-gray-900">Dashboard Gerencial (BI)</h1>
+            <h1 className="text-xl font-bold font-manrope tracking-tight text-gray-900">Dashboard Gerencial</h1>
           </div>
         </div>
 
